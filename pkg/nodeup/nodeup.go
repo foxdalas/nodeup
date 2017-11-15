@@ -53,6 +53,10 @@ func (o *NodeUP) Init() {
 		o.Log().Fatal(err)
 	}
 
+	if o.hostCount > 1 && !o.isWildcard(o.hostMask) {
+		o.Log().Panicf("Can't create more one host with not unique name. Please set -hostCount 1")
+	}
+
 	stack := openstack.New(o, o.osAdminKey, o.osKeyName, o.flavorName)
 
 	for _, hostname := range o.nameGenerator(o.hostMask, o.hostCount) {
@@ -296,7 +300,7 @@ func (o *NodeUP) knifeBootstrap(hostname string, ip string, role string, environ
 	return true
 }
 
-func (o NodeUP) deleteChefNode(hostname string) {
+func (o *NodeUP) deleteChefNode(hostname string) {
 	cmdName := "knife"
 	cmdArgs := []string{"node", "delete", hostname, "-y"}
 
@@ -311,5 +315,13 @@ func (o NodeUP) deleteChefNode(hostname string) {
 		o.Log().Errorf("Can't delete chef node %s: %s", hostname, err)
 	} else {
 		o.Log().Infof("Chef client %s deleted", hostname)
+	}
+}
+
+func (o *NodeUP) isWildcard(string string) bool {
+	if strings.ContainsAny(string, "*") {
+		return true
+	} else {
+		return false
 	}
 }

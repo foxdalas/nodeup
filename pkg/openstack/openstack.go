@@ -113,7 +113,7 @@ func (o *Openstack) CreateSever(hostname string) *servers.Server {
 	flavorID := o.getFlavorByName()
 	imageID := o.getImageByName()
 
-	o.Log().Infof("Creating server with flavor ID %s and imageID %s", flavorID, imageID)
+	o.Log().Infof("Creating server with hostname %s", hostname)
 
 	o.createAdminKey()
 
@@ -169,7 +169,7 @@ func (o *Openstack) getServer(sid string) *servers.Server {
 }
 
 func (o *Openstack) isServerExist(name string) bool {
-	sid, err  := servers.IDFromName(o.client, name)
+	_, err  := servers.IDFromName(o.client, name)
 	if err != nil {
 		o.Log().Info(err)
 		return false
