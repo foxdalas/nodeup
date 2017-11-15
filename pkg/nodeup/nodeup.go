@@ -11,7 +11,6 @@ import (
 	"syscall"
 	"errors"
 	"github.com/foxdalas/nodeup/pkg/openstack"
-	"github.com/go-cmd/cmd"
 	"github.com/foxdalas/nodeup/pkg/nodeup_const"
 	garbler "github.com/michaelbironneau/garbler/lib"
 
@@ -21,6 +20,8 @@ import (
 	"time"
 	"fmt"
 	"os/exec"
+	"io"
+	"bufio"
 )
 
 var _ nodeup.NodeUP = &NodeUP{}
@@ -36,7 +37,6 @@ func New(version string) *NodeUP {
 
 func (o *NodeUP) Init() {
 	o.Log().Infof("NodeUP %s starting", o.version)
-
 
 	// handle sigterm correctly
 	c := make(chan os.Signal, 1)
@@ -54,7 +54,7 @@ func (o *NodeUP) Init() {
 		o.Log().Fatal(err)
 	}
 
-	stack := openstack.New(o, o.osAuthURL, o.osTenantName,o.osUsername, o.osPassword, o.osAdminKey, o.osKeyName, o.flavorName)
+	stack := openstack.New(o, o.osAuthURL, o.osTenantName, o.osUsername, o.osPassword, o.osAdminKey, o.osKeyName, o.flavorName)
 
 	for _, hostname := range o.nameGenerator(o.hostMask, o.hostCount) {
 		oHost := stack.CreateSever(hostname)
@@ -115,7 +115,7 @@ func (o *NodeUP) params() error {
 
 	usr, err := user.Current()
 	if err != nil {
-		log.Fatal( err )
+		log.Fatal(err)
 	}
 
 	flag.StringVar(&o.osAdminKeyPath, "keyPath", "", "Openstack admin key path")
@@ -149,11 +149,10 @@ func (o *NodeUP) params() error {
 		keyFile := string(usr.HomeDir) + "/.ssh/id_rsa.pub"
 		dat, err := ioutil.ReadFile(keyFile)
 		if err != nil {
-			log.Fatal( err )
+			log.Fatal(err)
 		}
 		o.osAdminKey = string(dat)
 	}
-
 
 	if o.flavorName == "" {
 		return errors.New("Please provide -flavor string")
@@ -218,9 +217,9 @@ func (o *NodeUP) nameGenerator(prefix string, count int) []string {
 	req := garbler.PasswordStrengthRequirements{
 		MinimumTotalLength: 5,
 		MaximumTotalLength: 5,
-		Uppercase:         	0,
-		Digits: 			2,
-		Punctuation: 		0,
+		Uppercase:          0,
+		Digits:             2,
+		Punctuation:        0,
 	}
 	s, err := garbler.NewPassword(&req)
 	if err != nil {
@@ -234,7 +233,6 @@ func (o *NodeUP) nameGenerator(prefix string, count int) []string {
 }
 
 func (o *NodeUP) getPublicAddress(addresses map[string]interface{}) []string {
-
 	var result []string
 
 	//TODO: Please fix this shit
@@ -244,7 +242,6 @@ func (o *NodeUP) getPublicAddress(addresses map[string]interface{}) []string {
 			result = append(result, ip)
 		}
 	}
-
 	return result
 }
 
@@ -252,7 +249,7 @@ func (o *NodeUP) checkSSHPort(address string) bool {
 	i := 0
 	status := false
 	o.Log().Infof("Waiting SSH on host %s", address)
-	time.Sleep(5*time.Second) //Waiting host
+	time.Sleep(5 * time.Second) //Waiting host
 	for {
 		conn, err := net.Dial("tcp", address+":22")
 		if err != nil {
@@ -263,7 +260,7 @@ func (o *NodeUP) checkSSHPort(address string) bool {
 			status = true
 		}
 		i++
-		time.Sleep(10*time.Second)
+		time.Sleep(10 * time.Second)
 		if i >= o.sshWaitRetry {
 			break
 			status = false
@@ -278,58 +275,56 @@ func (o *NodeUP) knifeBootstrap(hostname string, ip string, role string, environ
 		ip, hostname, role, environment)
 
 	cmdArgs := strings.Fields(commandLine)
-	c := cmd.NewCmd(string("knife"),cmdArgs[0:]...)
-
-	o.Log().Infof("Starting knife bootstap for node %s", hostname)
-	statusChan := c.Start()
-
-	go func() {
-		for range time.NewTicker(2 * time.Second).C {
-			status := c.Status()
-			n := len(status.Stdout)
-			//TODO: Please add realtime logging
-			if n > 0 {
-				//fmt.Println(status.Stdout[n-1])
-			}
-
-		}
-	}()
-
-	go func() {
-		<-time.After(20 * time.Minute)
-		c.Stop()
-	}()
-
-
-	finalStatus := <-statusChan
-
-	err := ioutil.WriteFile("logs/" + hostname + ".log", []byte(strings.Join(finalStatus.Stdout,"\n")), 0644)
+	logFileName := "logs/" + hostname + ".log"
+	logFile, err := os.Create(logFileName)
 	if err != nil {
-		o.Log().Errorf("Can't write log file for host %s: %s", hostname, err)
+		o.Log().Error("Cannot create logfile")
+		o.Log().Error(err)
+		return
+	}
+	o.Log().Infof("Writing knife bootstrap output to file %s", logFileName)
+	wLogFile := bufio.NewWriter(logFile)
+
+
+	cmd := exec.Command("knife", cmdArgs...)
+	r, w := io.Pipe()
+	cmd.Stderr = w
+	cmd.Stdout = w
+
+	if err := cmd.Start(); err != nil {
+		o.Log().Error(err)
+		return
 	}
 
-	o.Log().Infof("Knife bootstrap exit code for node %s is %d", hostname, finalStatus.Exit)
-	if finalStatus.Exit == 0 {
-		o.Log().Infof("Finished knife bootstrap node %s", hostname)
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		if _, err := wLogFile.WriteString(scanner.Text() + "\n"); err != nil {
+			o.Log().Error(err)
+		}
+		if err = wLogFile.Flush(); err != nil {
+			o.Log().Error(err)
+		}
 	}
-	if finalStatus.Exit != 0 {
+	err = cmd.Wait()
+	if err != nil {
+		o.Log().Errorf("Knife bootstrap error: %s", err)
 		o.deleteChefNode(hostname)
 	}
 }
 
-func (o NodeUP) deleteChefNode (hostname string) {
+func (o NodeUP) deleteChefNode(hostname string) {
 	cmdName := "knife"
 	cmdArgs := []string{"node", "delete", hostname, "-y"}
 
 	if _, err := exec.Command(cmdName, cmdArgs...).Output(); err != nil {
-		o.Log().Errorf("Can't delete chef client %s: %s",hostname, err )
+		o.Log().Errorf("Can't delete chef client %s: %s", hostname, err)
 	} else {
 		o.Log().Infof("Chef node %s deleted", hostname)
 	}
 
 	cmdArgs = []string{"client", "delete", hostname, "-y"}
 	if _, err := exec.Command(cmdName, cmdArgs...).Output(); err != nil {
-		o.Log().Errorf("Can't delete chef node %s: %s",hostname, err )
+		o.Log().Errorf("Can't delete chef node %s: %s", hostname, err)
 	} else {
 		o.Log().Infof("Chef client %s deleted", hostname)
 	}
