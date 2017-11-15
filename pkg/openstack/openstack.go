@@ -14,7 +14,7 @@ import (
 )
 
 
-func New(nodeup nodeup.NodeUP, authURL string, tenantName string, username string, password string, key string, keyName string, flavor string) *Openstack {
+func New(nodeup nodeup.NodeUP, key string, keyName string, flavor string) *Openstack {
 
 	o := &Openstack{
 		nodeup: nodeup,
@@ -106,6 +106,10 @@ func (o *Openstack) createAdminKey() bool {
 
 
 func (o *Openstack) CreateSever(hostname string) *servers.Server {
+	if o.isServerExist(hostname) {
+		o.Log().Fatalf("Server %s already exists", hostname)
+	}
+
 	flavorID := o.getFlavorByName()
 	imageID := o.getImageByName()
 
@@ -162,6 +166,17 @@ func (o *Openstack) CreateSever(hostname string) *servers.Server {
 func (o *Openstack) getServer(sid string) *servers.Server {
 	server, _ := servers.Get(o.client, sid).Extract()
 	return server
+}
+
+func (o *Openstack) isServerExist(name string) bool {
+	sid, err  := servers.IDFromName(o.client, name)
+	if err != nil {
+		o.Log().Info(err)
+		return false
+	} else {
+		o.Log().Infof("Server with name %s already exist", name)
+		return true
+	}
 }
 
 func (o *Openstack) Log() *logrus.Entry {

@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"os/exec"
 	"io"
-	"bufio"
 )
 
 var _ nodeup.NodeUP = &NodeUP{}
@@ -54,7 +53,7 @@ func (o *NodeUP) Init() {
 		o.Log().Fatal(err)
 	}
 
-	stack := openstack.New(o, o.osAuthURL, o.osTenantName, o.osUsername, o.osPassword, o.osAdminKey, o.osKeyName, o.flavorName)
+	stack := openstack.New(o, o.osAdminKey, o.osKeyName, o.flavorName)
 
 	for _, hostname := range o.nameGenerator(o.hostMask, o.hostCount) {
 		oHost := stack.CreateSever(hostname)
@@ -71,9 +70,9 @@ func (o *NodeUP) Init() {
 			o.Log().Errorf("Can't bootstrap host %s no SSH access", hostname)
 			stack.DeleteServer(oHost.ID)
 		}
-		o.knifeBootstrap(hostname, availableAddresses[0], o.hostRole, o.hostEnvironment)
-		stack.DeleteServer(oHost.ID)
-		o.deleteChefNode(hostname)
+		if !o.knifeBootstrap(hostname, availableAddresses[0], o.hostRole, o.hostEnvironment) {
+			stack.DeleteServer(oHost.ID)
+		}
 	}
 }
 
@@ -269,7 +268,7 @@ func (o *NodeUP) checkSSHPort(address string) bool {
 	return status
 }
 
-func (o *NodeUP) knifeBootstrap(hostname string, ip string, role string, environment string) {
+func (o *NodeUP) knifeBootstrap(hostname string, ip string, role string, environment string) bool {
 
 	commandLine := fmt.Sprintf("bootstrap %s -N %s -r role[%s] -E %s -y -x cloud-user --sudo --bootstrap-version 12.20.3 --no-host-key-verify",
 		ip, hostname, role, environment)
@@ -280,36 +279,21 @@ func (o *NodeUP) knifeBootstrap(hostname string, ip string, role string, environ
 	if err != nil {
 		o.Log().Error("Cannot create logfile")
 		o.Log().Error(err)
-		return
+		return false
 	}
 	o.Log().Infof("Writing knife bootstrap output to file %s", logFileName)
-	wLogFile := bufio.NewWriter(logFile)
-
 
 	cmd := exec.Command("knife", cmdArgs...)
-	r, w := io.Pipe()
-	cmd.Stderr = w
-	cmd.Stdout = w
-
-	if err := cmd.Start(); err != nil {
-		o.Log().Error(err)
-		return
-	}
-
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		if _, err := wLogFile.WriteString(scanner.Text() + "\n"); err != nil {
-			o.Log().Error(err)
-		}
-		if err = wLogFile.Flush(); err != nil {
-			o.Log().Error(err)
-		}
-	}
-	err = cmd.Wait()
-	if err != nil {
+	cmd.Stdout = io.MultiWriter(logFile)
+	cmd.Stderr = cmd.Stdout
+	if err := cmd.Run(); err != nil {
 		o.Log().Errorf("Knife bootstrap error: %s", err)
 		o.deleteChefNode(hostname)
+		return false
 	}
+
+	o.Log().Infof("knife bootstrap node %s done", hostname)
+	return true
 }
 
 func (o NodeUP) deleteChefNode(hostname string) {
