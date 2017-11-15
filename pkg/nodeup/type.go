@@ -23,6 +23,7 @@ type NodeUP struct {
 	randomCount int
 	hostRole string
 	hostEnvironment string
+	sshWaitRetry int
 
 	stopCh    chan struct{}
 	waitGroup sync.WaitGroup

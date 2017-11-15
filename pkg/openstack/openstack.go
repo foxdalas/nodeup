@@ -27,18 +27,18 @@ func New(nodeup nodeup.NodeUP, authURL string, tenantName string, username strin
 
 	opts, err := openstack.AuthOptionsFromEnv()
 	if err != nil {
-		o.Log().Fatalf("Error: %s", err)
+		o.Log().Fatal("AUTH Provide options: %s", err)
 	}
 	provider, err := openstack.AuthenticatedClient(opts)
 	if err != nil {
-		o.Log().Fatalf("Error AUTH Client: %s", err)
+		o.Log().Fatalf("AUTH Client: %s", err)
 	}
 
 	o.client, err = openstack.NewComputeV2(provider, gophercloud.EndpointOpts{
 		Region: os.Getenv("OS_REGION_NAME"),
 	})
 	if err != nil {
-		o.Log().Fatalf("Error Compute: %s", err)
+		o.Log().Fatalf("Compute: %s", err)
 	}
 	return o
 }
@@ -47,7 +47,7 @@ func (o *Openstack) getFlavorByName() string {
 	o.Log().Infof("Searching FlavorID for Flavor name: %s", o.flavorName)
 	flavorID, err := flavors.IDFromName(o.client, o.flavorName)
 	if err != nil {
-		o.Log().Fatalf("Error flavor: %s", err)
+		o.Log().Fatalf("Flavor: %s", err)
 	}
 	o.Log().Infof("Found flavor id: %s", flavorID)
 	return flavorID
@@ -63,7 +63,7 @@ func (o *Openstack) getImageByName() string {
 
 func (o *Openstack) createAdminKey() bool {
 
-	//Cheking existing keypair
+	//Checking existing keypair
 	allPages, err := keypairs.List(o.client).AllPages()
 	if err != nil {
 		panic(err)
@@ -77,16 +77,16 @@ func (o *Openstack) createAdminKey() bool {
 	validation := false
 	for _, kp := range allKeyPairs {
 		if kp.Name == o.keyName {
-			o.Log().Infof("Keypair with name %s already exist", o.keyName)
+			o.Log().Infof("Keypair with name %s already exists", o.keyName)
 			o.Log().Infof("Checking key data for %s", o.keyName)
 			if kp.PublicKey == o.key {
-				o.Log().Infof("Keypair %s already ok", o.keyName)
+				o.Log().Infof("Keypair with name %s already exists", o.keyName)
 				validation = true
 			}
 		}
 	}
 	if !validation {
-		o.Log().Infof("Keypair with name %s not exist. Creating...", o.keyName)
+		o.Log().Infof("Keypair with name %s does not exist. Creating...", o.keyName)
 		keycreateOpts := keypairs.CreateOpts{
 			Name:      o.keyName,
 			PublicKey: o.key,
@@ -94,10 +94,10 @@ func (o *Openstack) createAdminKey() bool {
 
 		keypair, err := keypairs.Create(o.client, keycreateOpts).Extract()
 		if err != nil {
-			o.Log().Fatalf("Error creating keypair %s: %s",o.keyName, err)
+			o.Log().Fatalf("Keypair %s: %s",o.keyName, err)
 			return false
 		}
-		o.Log().Infof("Keypair %s created", keypair.Name)
+		o.Log().Infof("Keypair %s was created", keypair.Name)
 	}
 
 	return true
@@ -136,8 +136,16 @@ func (o *Openstack) CreateSever(hostname string) *servers.Server {
 
 	o.Log().Infof("Waiting server %s up", info.Name)
 	i := 0
+	status := ""
 	for {
-		time.Sleep(110 * time.Second)
+		time.Sleep(5 * time.Second) //Waiting 5 second before retry getting openstack host status
+		info = o.getServer(server.ID)
+
+		if info.Status == status {
+			i++
+			continue
+		}
+
 		if info.Status == "ACTIVE" {
 			o.Log().Infof("Server %s status is %s",info.Name, info.Status)
 			break
@@ -147,7 +155,6 @@ func (o *Openstack) CreateSever(hostname string) *servers.Server {
 		if i >= 10 {
 			o.Log().Errorf("Timeout for server %s with status %s", info.Name, info.Status)
 		}
-		info = o.getServer(server.ID)
 	}
 	return info
 }
@@ -169,6 +176,5 @@ func (o *Openstack) DeleteServer(sid string) {
 		o.Log().Errorf("Deleting error: %s", result.Err)
 	} else {
 		o.Log().Infof("Server %s deleted", sid)
-
 	}
 }

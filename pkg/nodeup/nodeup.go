@@ -34,7 +34,6 @@ func New(version string) *NodeUP {
 	}
 }
 
-
 func (o *NodeUP) Init() {
 	o.Log().Infof("NodeUP %s starting", o.version)
 
@@ -127,6 +126,7 @@ func (o *NodeUP) params() error {
 	flag.StringVar(&o.hostEnvironment, "hostEnvironment", "", "Environment name for host")
 	flag.IntVar(&o.hostCount, "hostCount", 0, "Hosts count")
 	flag.IntVar(&o.randomCount, "randomCount", 5, "Host mask random prefix")
+	flag.IntVar(&o.sshWaitRetry, "sshWaitRetry", 10, "SSH Retry count")
 	flag.Parse()
 
 	if o.hostRole == "" {
@@ -143,7 +143,6 @@ func (o *NodeUP) params() error {
 
 	if o.hostCount == 0 {
 		return errors.New("Please provide -hostCount int")
-
 	}
 
 	if len(o.osAdminKeyPath) == 0 {
@@ -199,7 +198,6 @@ func (o *NodeUP) params() error {
 	return nil
 }
 
-
 func (o *NodeUP) Stop() {
 	o.Log().Info("shutting things down")
 	close(o.stopCh)
@@ -218,12 +216,11 @@ func (o *NodeUP) nameGenerator(prefix string, count int) []string {
 	var result []string
 
 	req := garbler.PasswordStrengthRequirements{
-
 		MinimumTotalLength: 5,
 		MaximumTotalLength: 5,
-		Uppercase:         0,
-		Digits: 2,
-		Punctuation: 0,
+		Uppercase:         	0,
+		Digits: 			2,
+		Punctuation: 		0,
 	}
 	s, err := garbler.NewPassword(&req)
 	if err != nil {
@@ -231,8 +228,8 @@ func (o *NodeUP) nameGenerator(prefix string, count int) []string {
 	}
 
 	hostname := strings.Replace(prefix, "*", s, -1)
-
 	result = append(result, hostname)
+
 	return result
 }
 
@@ -267,7 +264,7 @@ func (o *NodeUP) checkSSHPort(address string) bool {
 		}
 		i++
 		time.Sleep(10*time.Second)
-		if i >= 10 {
+		if i >= o.sshWaitRetry {
 			break
 			status = false
 		}
@@ -281,7 +278,7 @@ func (o *NodeUP) knifeBootstrap(hostname string, ip string, role string, environ
 		ip, hostname, role, environment)
 
 	cmdArgs := strings.Fields(commandLine)
-	c := cmd.NewCmd(string("/usr/local/bin/knife"),cmdArgs[0:]...)
+	c := cmd.NewCmd(string("knife"),cmdArgs[0:]...)
 
 	o.Log().Infof("Starting knife bootstap for node %s", hostname)
 	statusChan := c.Start()
@@ -306,9 +303,7 @@ func (o *NodeUP) knifeBootstrap(hostname string, ip string, role string, environ
 
 	finalStatus := <-statusChan
 
-
-	outLog := strings.Join(finalStatus.Stdout,"\n")
-	err := ioutil.WriteFile("logs/" + hostname + ".log", []byte(outLog), 0644)
+	err := ioutil.WriteFile("logs/" + hostname + ".log", []byte(strings.Join(finalStatus.Stdout,"\n")), 0644)
 	if err != nil {
 		o.Log().Errorf("Can't write log file for host %s: %s", hostname, err)
 	}
@@ -323,7 +318,7 @@ func (o *NodeUP) knifeBootstrap(hostname string, ip string, role string, environ
 }
 
 func (o NodeUP) deleteChefNode (hostname string) {
-	cmdName := "/usr/local/bin/knife"
+	cmdName := "knife"
 	cmdArgs := []string{"node", "delete", hostname, "-y"}
 
 	if _, err := exec.Command(cmdName, cmdArgs...).Output(); err != nil {
