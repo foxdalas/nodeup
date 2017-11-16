@@ -13,7 +13,6 @@ import (
 	"time"
 )
 
-
 func New(nodeup nodeup.NodeUP, key string, keyName string, flavor string) *Openstack {
 
 	o := &Openstack{
@@ -79,9 +78,15 @@ func (o *Openstack) createAdminKey() bool {
 		if kp.Name == o.keyName {
 			o.Log().Infof("Keypair with name %s already exists", o.keyName)
 			o.Log().Infof("Checking key data for %s", o.keyName)
-			if kp.PublicKey == o.key {
+			if kp.PublicKey == string(o.key) {
 				o.Log().Infof("Keypair with name %s already exists", o.keyName)
 				validation = true
+			} else {
+				o.Log().Infof("Deleting keypair with name %s", o.keyName)
+				err := keypairs.Delete(o.client, o.keyName).ExtractErr()
+				if err != nil {
+					o.Log().Errorf("Can't delete keypair with name %s", o.keyName)
+				}
 			}
 		}
 	}
@@ -102,8 +107,6 @@ func (o *Openstack) createAdminKey() bool {
 
 	return true
 }
-
-
 
 func (o *Openstack) CreateSever(hostname string) *servers.Server {
 	if o.isServerExist(hostname) {

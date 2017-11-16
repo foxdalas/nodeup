@@ -127,6 +127,8 @@ func (o *NodeUP) params() error {
 	flag.StringVar(&o.hostMask, "nameMask", "", "Name mask like role-environment-*")
 	flag.StringVar(&o.hostRole, "hostRole", "", "Role name for host")
 	flag.StringVar(&o.hostEnvironment, "hostEnvironment", "", "Environment name for host")
+	flag.StringVar(&o.logDir, "logDir", "logs", "Logs directory")
+	flag.StringVar(&o.privateKey, "privateKey", "", "SSH Private key for knife bootstrap")
 	flag.IntVar(&o.hostCount, "hostCount", 0, "Hosts count")
 	flag.IntVar(&o.randomCount, "randomCount", 5, "Host mask random prefix")
 	flag.IntVar(&o.sshWaitRetry, "sshWaitRetry", 10, "SSH Retry count")
@@ -150,6 +152,13 @@ func (o *NodeUP) params() error {
 
 	if len(o.osAdminKeyPath) == 0 {
 		keyFile := string(usr.HomeDir) + "/.ssh/id_rsa.pub"
+		dat, err := ioutil.ReadFile(keyFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		o.osAdminKey = string(dat)
+	} else {
+		keyFile := o.osAdminKeyPath
 		dat, err := ioutil.ReadFile(keyFile)
 		if err != nil {
 			log.Fatal(err)
@@ -274,11 +283,24 @@ func (o *NodeUP) checkSSHPort(address string) bool {
 
 func (o *NodeUP) knifeBootstrap(hostname string, ip string, role string, environment string) bool {
 
-	commandLine := fmt.Sprintf("bootstrap %s -N %s -r role[%s] -E %s -y -x cloud-user --sudo --bootstrap-version 12.20.3 --no-host-key-verify",
-		ip, hostname, role, environment)
+	if _, err := os.Stat(o.logDir); os.IsNotExist(err) {
+		o.Log().Infof("Creating logs directory in %s", o.logDir)
+		os.Mkdir(o.logDir, 0775)
+	}
+
+	commandLine := fmt.Sprintf("bootstrap " +
+		"%s -N %s -r role[%s] -E %s -y -x cloud-user --sudo --bootstrap-version 12.20.3 " +
+			"--no-host-key-verify", ip, hostname, role, environment)
+
+	//Custom ssh key for knife
+	if o.privateKey != "" {
+		commandLine = commandLine + fmt.Sprintf(" -i  %s", o.privateKey)
+	}
+
+	o.Log().Infof("Bootstrap options %s", commandLine)
 
 	cmdArgs := strings.Fields(commandLine)
-	logFileName := "logs/" + hostname + ".log"
+	logFileName := o.logDir + "/" + hostname + ".log"
 	logFile, err := os.Create(logFileName)
 	if err != nil {
 		o.Log().Error("Cannot create logfile")

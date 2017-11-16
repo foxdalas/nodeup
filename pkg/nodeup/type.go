@@ -5,7 +5,6 @@ import (
 	"sync"
 )
 
-
 type NodeUP struct {
 	version string
 	log     *log.Entry
@@ -24,6 +23,8 @@ type NodeUP struct {
 	hostRole string
 	hostEnvironment string
 	sshWaitRetry int
+	logDir string
+	privateKey string
 
 	stopCh    chan struct{}
 	waitGroup sync.WaitGroup
