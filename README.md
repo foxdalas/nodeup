@@ -9,7 +9,8 @@ Server provisioning with Openstack API and Knife Bootstrap.
 
 ### Install
 ```
-go install -v github.com/foxdalas/nodeup/
+go get -u github.com/foxdalas/nodeup/
+go install github.com/foxdalas/nodeup/
 ```
 
 ### Run
