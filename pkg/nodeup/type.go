@@ -25,6 +25,7 @@ type NodeUP struct {
 	sshWaitRetry int
 	logDir string
 	privateKey string
+	allowKnifeFail bool
 
 	stopCh    chan struct{}
 	waitGroup sync.WaitGroup

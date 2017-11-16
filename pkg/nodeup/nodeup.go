@@ -128,6 +128,7 @@ func (o *NodeUP) params() error {
 	flag.StringVar(&o.hostRole, "hostRole", "", "Role name for host")
 	flag.StringVar(&o.osKeyName, "keyName", usr.Username, "Openstack admin key name")
 	flag.StringVar(&o.osAdminKeyPath, "keyPath", "", "Openstack admin key path")
+	flag.BoolVar(&o.allowKnifeFail, "allowKnifeFail", false, "Don't delete host after knife fail")
 
 
 	flag.StringVar(&o.logDir, "logDir", "logs", "Logs directory")
@@ -314,8 +315,13 @@ func (o *NodeUP) knifeBootstrap(hostname string, ip string, role string, environ
 	cmd.Stderr = cmd.Stdout
 	if err := cmd.Run(); err != nil {
 		o.Log().Errorf("Knife bootstrap error: %s", err)
-		o.deleteChefNode(hostname)
-		return false
+
+		if o.allowKnifeFail {
+			o.Log().Infof("Knife bootstrap fail on host %s. -allowKnifeFail true.")
+		} else {
+			o.deleteChefNode(hostname)
+			return false
+		}
 	}
 
 	o.Log().Infof("knife bootstrap node %s done", hostname)
