@@ -121,15 +121,17 @@ func (o *NodeUP) params() error {
 		log.Fatal(err)
 	}
 
-	flag.StringVar(&o.osAdminKeyPath, "keyPath", "", "Openstack admin key path")
+	flag.StringVar(&o.hostMask, "hostName", "", "Hostname mask like role-environment-* or full-hostname-name if -hostCount 1")
+	flag.IntVar(&o.hostCount, "hostCount", 1, "Deployment hosts count")
 	flag.StringVar(&o.flavorName, "flavor", "", "Openstack flavor name")
-	flag.StringVar(&o.osKeyName, "keyname", usr.Username, "Openstack admin key name")
-	flag.StringVar(&o.hostMask, "nameMask", "", "Name mask like role-environment-*")
-	flag.StringVar(&o.hostRole, "hostRole", "", "Role name for host")
 	flag.StringVar(&o.hostEnvironment, "hostEnvironment", "", "Environment name for host")
+	flag.StringVar(&o.hostRole, "hostRole", "", "Role name for host")
+	flag.StringVar(&o.osKeyName, "keyName", usr.Username, "Openstack admin key name")
+	flag.StringVar(&o.osAdminKeyPath, "keyPath", "", "Openstack admin key path")
+
+
 	flag.StringVar(&o.logDir, "logDir", "logs", "Logs directory")
 	flag.StringVar(&o.privateKey, "privateKey", "", "SSH Private key for knife bootstrap")
-	flag.IntVar(&o.hostCount, "hostCount", 0, "Hosts count")
 	flag.IntVar(&o.randomCount, "randomCount", 5, "Host mask random prefix")
 	flag.IntVar(&o.sshWaitRetry, "sshWaitRetry", 10, "SSH Retry count")
 	flag.Parse()
