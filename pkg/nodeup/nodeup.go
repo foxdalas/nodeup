@@ -263,7 +263,7 @@ func (o *NodeUP) checkSSHPort(address string) bool {
 	o.Log().Infof("Waiting SSH on host %s", address)
 	time.Sleep(10 * time.Second) //Waiting ssh daemon
 	for {
-		conn, err := net.Dial("tcp", address+":22")
+		conn, err := net.DialTimeout("tcp", address+":22", 3*time.Second)
 		if err != nil {
 			o.Log().Errorf("Cannot connect to host %s #%d: %s", address, i+1, err.Error())
 			status = false
