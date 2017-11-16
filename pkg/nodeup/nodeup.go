@@ -267,15 +267,14 @@ func (o *NodeUP) checkSSHPort(address string) bool {
 	time.Sleep(10 * time.Second) //Waiting ssh daemon
 	for {
 		conn, err := net.DialTimeout("tcp", address+":22", 3*time.Second)
+		defer conn.Close()
 		if err != nil {
 			o.Log().Errorf("Cannot connect to host %s #%d: %s", address, i+1, err.Error())
 			status = false
 		} else {
-			defer conn.Close()
 			status = true
 		}
 		i++
-		time.Sleep(10 * time.Second)
 		if i >= o.sshWaitRetry {
 			break
 			status = false
@@ -339,10 +338,10 @@ func (o *NodeUP) deleteChefNode(hostname string) {
 	}
 
 	cmdArgs = []string{"client", "delete", hostname, "-y"}
-	if _, err := exec.Command(cmdName, cmdArgs...).Output(); err != nil {
-		o.Log().Errorf("Can't delete chef node %s: %s", hostname, err)
-	} else {
+	if _, err := exec.Command(cmdName, cmdArgs...).Output(); err == nil {
 		o.Log().Infof("Chef client %s deleted", hostname)
+	} else {
+		o.Log().Errorf("Can't delete chef node %s: %s", hostname, err)
 	}
 }
 

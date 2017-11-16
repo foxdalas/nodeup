@@ -25,38 +25,38 @@ func New(nodeup nodeup.NodeUP, key string, keyName string, flavor string) *Opens
 	var err error
 
 	opts, err := openstack.AuthOptionsFromEnv()
-	if err != nil {
-		o.Log().Fatal("AUTH Provide options: %s", err)
-	}
+	o.assertError(err, "AUTH Provide options")
+
 	provider, err := openstack.AuthenticatedClient(opts)
-	if err != nil {
-		o.Log().Fatalf("AUTH Client: %s", err)
-	}
+	o.assertError(err, "AUTH Client")
 
 	o.client, err = openstack.NewComputeV2(provider, gophercloud.EndpointOpts{
 		Region: os.Getenv("OS_REGION_NAME"),
 	})
-	if err != nil {
-		o.Log().Fatalf("Compute: %s", err)
-	}
+	o.assertError(err, "Compute")
+
 	return o
+}
+
+func (o *Openstack) assertError(err error, message string) {
+	if err != nil {
+		o.Log().Fatalf(message + ": %s", err)
+	}
 }
 
 func (o *Openstack) getFlavorByName() string {
 	o.Log().Infof("Searching FlavorID for Flavor name: %s", o.flavorName)
 	flavorID, err := flavors.IDFromName(o.client, o.flavorName)
-	if err != nil {
-		o.Log().Fatalf("Flavor: %s", err)
-	}
+	o.assertError(err, "Flavor")
+
 	o.Log().Infof("Found flavor id: %s", flavorID)
 	return flavorID
 }
 
 func (o *Openstack) getImageByName() string {
 	imageID, err := images.IDFromName(o.client, "Ubuntu 16.04-server (64 bit)")
-	if err != nil {
-		o.Log().Fatalf("Error image: %s", err)
-	}
+	o.assertError(err, "Error image")
+
 	return imageID
 }
 
