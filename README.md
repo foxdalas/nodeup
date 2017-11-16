@@ -1,5 +1,7 @@
 # nodeup
 
+[![CircleCI](https://circleci.com/gh/foxdalas/nodeup.svg?style=svg)](https://circleci.com/gh/foxdalas/nodeup)
+
 Server provisioning with Openstack API and Knife Bootstrap.
 
 
