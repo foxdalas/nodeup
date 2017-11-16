@@ -4,7 +4,7 @@ import (
 	"github.com/foxdalas/nodeup/pkg/nodeup"
 )
 
-var AppVersion = "0.0.1-beta"
+var AppVersion = "0.0.1"
 var AppGitCommit = ""
 var AppGitState = ""
 
