@@ -297,8 +297,6 @@ func (o *NodeUP) knifeBootstrap(hostname string, ip string, role string, environ
 		commandLine = commandLine + fmt.Sprintf(" -i  %s", o.privateKey)
 	}
 
-	o.Log().Infof("Bootstrap options %s", commandLine)
-
 	cmdArgs := strings.Fields(commandLine)
 	logFileName := o.logDir + "/" + hostname + ".log"
 	logFile, err := os.Create(logFileName)
