@@ -197,15 +197,19 @@ func (o *NodeUP) params() error {
 	flag.StringVar(&o.chefClientName, "chefClientName", "", "Chef client name")
 	flag.StringVar(&o.chefKeyPath, "chefKeyPath", "", "Chef client certificate path")
 
-	flag.StringVar(&o.chefValidationPath, "chefValidationPath", "", "Validation key path or ENV['CHEF_VALIDATION_PEM']")
+	flag.StringVar(&o.chefValidationPath, "chefValidationPath", "", "Validation key path or CHEF_VALIDATION_PEM")
 	flag.Parse()
 
-	if o.chefValidationPath == "" {
-		return errors.New("Please provide -chefValidationPath or environment variable VALIDATION_PEM")
+	if o.chefValidationPath == "" && len(os.Getenv("CHEF_VALIDATION_PEM")) == 0 {
+		return errors.New("Please provide -chefValidationPath or environment variable CHEF_VALIDATION_PEM")
 	} else {
-		o.chefValidationPem, err = ioutil.ReadFile(o.chefValidationPath)
-		if err != nil {
-			o.Log().Errorf("Validation read error: %s", err)
+		if len(os.Getenv("CHEF_VALIDATION_PEM")) > 0 {
+			o.chefValidationPem = []byte(os.Getenv("CHEF_VALIDATION_PEM"))
+		} else {
+			o.chefValidationPem, err = ioutil.ReadFile(o.chefValidationPath)
+			if err != nil {
+				o.Log().Errorf("Validation read error: %s", err)
+			}
 		}
 	}
 
