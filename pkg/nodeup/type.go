@@ -9,23 +9,33 @@ type NodeUP struct {
 	version string
 	log     *log.Entry
 
-	osAuthURL string
-	osTenantName string
-	osPassword string
-	osUsername string
-	osAdminKey string
+	name         string
+	user         string
+	count        int
+	prefixCharts int
+	concurrency  int
+	ignoreFail   bool
+	logDir       string
+
+	osAuthURL      string
+	osTenantName   string
+	osPassword     string
+	osUsername     string
+	osAdminKey     string
 	osAdminKeyPath string
-	flavorName string
-	osKeyName string
-	hostMask string
-	hostCount int
-	randomCount int
-	hostRole string
-	hostEnvironment string
+	osFlavorName   string
+	osKeyName      string
+
 	sshWaitRetry int
-	logDir string
-	privateKey string
-	allowKnifeFail bool
+
+	chefVersion        string
+	chefServerUrl      string
+	chefClientName     string
+	chefKeyPath        string
+	chefValidationPath string
+	chefValidationPem  []byte
+	chefEnvironment    string
+	chefRole           string
 
 	stopCh    chan struct{}
 	waitGroup sync.WaitGroup

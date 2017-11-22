@@ -1,25 +1,25 @@
 package openstack
 
 import (
+	"github.com/foxdalas/nodeup/pkg/nodeup_const"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
+	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/keypairs"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/images"
-	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/keypairs"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
-	"os"
 	"github.com/sirupsen/logrus"
-	"github.com/foxdalas/nodeup/pkg/nodeup_const"
+	"os"
 	"time"
 )
 
 func New(nodeup nodeup.NodeUP, key string, keyName string, flavor string) *Openstack {
 
 	o := &Openstack{
-		nodeup: nodeup,
+		nodeup:     nodeup,
 		flavorName: flavor,
-		key: key,
-		keyName: keyName,
+		key:        key,
+		keyName:    keyName,
 	}
 
 	var err error
@@ -40,7 +40,7 @@ func New(nodeup nodeup.NodeUP, key string, keyName string, flavor string) *Opens
 
 func (o *Openstack) assertError(err error, message string) {
 	if err != nil {
-		o.Log().Fatalf(message + ": %s", err)
+		o.Log().Fatalf(message+": %s", err)
 	}
 }
 
@@ -99,7 +99,7 @@ func (o *Openstack) createAdminKey() bool {
 
 		keypair, err := keypairs.Create(o.client, keycreateOpts).Extract()
 		if err != nil {
-			o.Log().Fatalf("Keypair %s: %s",o.keyName, err)
+			o.Log().Fatalf("Keypair %s: %s", o.keyName, err)
 			return false
 		}
 		o.Log().Infof("Keypair %s was created", keypair.Name)
@@ -154,7 +154,7 @@ func (o *Openstack) CreateSever(hostname string) *servers.Server {
 		}
 
 		if info.Status == "ACTIVE" {
-			o.Log().Infof("Server %s status is %s",info.Name, info.Status)
+			o.Log().Infof("Server %s status is %s", info.Name, info.Status)
 			break
 		}
 		o.Log().Infof("Server %s status is %s", info.Name, info.Status)
@@ -172,7 +172,7 @@ func (o *Openstack) getServer(sid string) *servers.Server {
 }
 
 func (o *Openstack) isServerExist(name string) bool {
-	_, err  := servers.IDFromName(o.client, name)
+	_, err := servers.IDFromName(o.client, name)
 	if err != nil {
 		o.Log().Info(err)
 		return false
@@ -187,12 +187,26 @@ func (o *Openstack) Log() *logrus.Entry {
 	return log
 }
 
-func (o *Openstack) DeleteServer(sid string) {
+func (o *Openstack) DeleteServer(sid string) error {
 	o.Log().Infof("Deleting server with ID %s", sid)
-	result :=  servers.Delete(o.client, sid)
+	result := servers.Delete(o.client, sid)
 	if result.Err != nil {
 		o.Log().Errorf("Deleting error: %s", result.Err)
 	} else {
 		o.Log().Infof("Server %s deleted", sid)
+	}
+	return result.Err
+}
+
+func (o *Openstack) DeleteIfError(id string, err error) bool {
+	if err != nil {
+		o.Log().Error(err)
+		err = o.DeleteServer(id)
+		if err != nil {
+			o.Log().Errorf("Openstack host delete error %s", err)
+		}
+		return true
+	} else {
+		return false
 	}
 }

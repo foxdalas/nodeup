@@ -3,24 +3,24 @@ package nodeup
 import (
 	log "github.com/sirupsen/logrus"
 
-	"sync"
-	"strings"
-	"os"
-	"flag"
-	"os/signal"
-	"syscall"
 	"errors"
-	"github.com/foxdalas/nodeup/pkg/openstack"
+	"flag"
+	"github.com/foxdalas/nodeup/pkg/chef"
 	"github.com/foxdalas/nodeup/pkg/nodeup_const"
+	"github.com/foxdalas/nodeup/pkg/openstack"
+	"github.com/foxdalas/nodeup/pkg/ssh"
 	garbler "github.com/michaelbironneau/garbler/lib"
+	"os"
+	"os/signal"
+	"strings"
+	"sync"
+	"syscall"
 
-	"os/user"
 	"io/ioutil"
 	"net"
-	"time"
-	"fmt"
 	"os/exec"
-	"io"
+	"os/user"
+	"time"
 )
 
 var _ nodeup.NodeUP = &NodeUP{}
@@ -53,29 +53,85 @@ func (o *NodeUP) Init() {
 		o.Log().Fatal(err)
 	}
 
-	if o.hostCount > 1 && !o.isWildcard(o.hostMask) {
-		o.Log().Panicf("Can't create more one host with not unique name. Please set -hostCount 1")
+	if _, err := os.Stat(o.logDir); os.IsNotExist(err) {
+		o.Log().Infof("Creating logs directory in %s", o.logDir)
+		os.Mkdir(o.logDir, 0775)
 	}
 
-	stack := openstack.New(o, o.osAdminKey, o.osKeyName, o.flavorName)
+	if o.count > 1 && !o.isWildcard(o.name) {
+		o.Log().Panicf("Can't create more one host with not unique name. Please set -count 1")
+	}
 
-	for _, hostname := range o.nameGenerator(o.hostMask, o.hostCount) {
-		oHost := stack.CreateSever(hostname)
+	s := openstack.New(o, o.osAdminKey, o.osKeyName, o.osFlavorName)
+	chefClient, err := chef.NewChefClient(o, o.chefClientName, o.chefKeyPath, o.chefServerUrl)
+	if err != nil {
+		o.Log().Fatalf("Chef client error: %s", err)
+	}
+
+	for _, hostname := range o.nameGenerator(o.name, o.count) {
+		oHost := s.CreateSever(hostname)
 		var availableAddresses []string
 		for _, ip := range o.getPublicAddress(oHost.Addresses) {
+
+			logFile := o.logDir + "/" + hostname + ".log"
+			outFile, err := os.Create(logFile)
+
 			if o.checkSSHPort(ip) {
 				o.Log().Infof("SSH is accessible on host %s", hostname)
 				availableAddresses = append(availableAddresses, ip)
 			} else {
 				o.Log().Errorf("SSH is unreachable on host %s", hostname)
+				s.DeleteServer(oHost.ID)
+				return
 			}
-		}
-		if len(availableAddresses) == 0 {
-			o.Log().Errorf("Can't bootstrap host %s no SSH access", hostname)
-			stack.DeleteServer(oHost.ID)
-		}
-		if !o.knifeBootstrap(hostname, availableAddresses[0], o.hostRole, o.hostEnvironment) {
-			stack.DeleteServer(oHost.ID)
+
+			if len(availableAddresses) == 0 {
+				o.Log().Errorf("Can't bootstrap host %s no SSH access", hostname)
+				s.DeleteServer(oHost.ID)
+			}
+
+			//Create SSH connection
+			ssh, err := ssh.New(o, ip, "cloud-user")
+			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
+
+			//Run apt-get update
+			err = ssh.RunCommandPipe("sudo apt-get update", outFile)
+			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
+
+			//Run mkdir /etc/chef
+			err = ssh.RunCommandPipe("sudo mkdir /etc/chef", outFile)
+			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
+
+			//Install chef-client
+			err = ssh.RunCommandPipe("wget -q https://omnitruck.chef.io/install.sh && "+
+				"sudo bash ./install.sh -v "+o.chefVersion+" && rm install.sh", outFile)
+			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
+
+			//Create Bootstrap data
+			chefData, err := chef.New(o, hostname, o.chefServerUrl, o.chefValidationPem, []string{"role[" + o.chefRole + "]"})
+			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
+
+			//Uploading bootstrap.json
+			err = ssh.TransferFile(chefData.BootstrapJson, "bootstrap.json", "/home/cloud-user")
+			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
+
+			//Uploading client.rb
+			err = ssh.TransferFile(chefData.ChefConfig, "client.rb", "/home/cloud-user")
+			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
+
+			//Uploading validation.pem
+			err = ssh.TransferFile(chefData.ValidationPem, "validation.pem", "/home/cloud-user")
+			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
+
+			err = ssh.RunCommandPipe("sudo chmod 0600 /home/cloud-user/validation.pem", outFile)
+
+			err = ssh.RunCommandPipe("sudo chef-client -c /home/cloud-user/client.rb -E "+o.chefEnvironment+" -j "+"/home/cloud-user/bootstrap.json", outFile)
+			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
+
+			err = ssh.RunCommandPipe("rm client.rb && sudo rm validation.pem && rm /home/cloud-user/bootstrap.json", outFile)
+			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
+
+			o.deleteHost(s, chefClient, oHost.ID, hostname)
 		}
 	}
 }
@@ -85,7 +141,6 @@ func makeLog() *log.Entry {
 	if logtype == "" {
 		logtype = "text"
 	}
-
 	if logtype == "json" {
 		log.SetFormatter(&log.JSONFormatter{})
 	} else if logtype == "text" {
@@ -121,36 +176,65 @@ func (o *NodeUP) params() error {
 		log.Fatal(err)
 	}
 
-	flag.StringVar(&o.hostMask, "hostName", "", "Hostname mask like role-environment-* or full-hostname-name if -hostCount 1")
-	flag.IntVar(&o.hostCount, "hostCount", 1, "Deployment hosts count")
-	flag.StringVar(&o.flavorName, "flavor", "", "Openstack flavor name")
-	flag.StringVar(&o.hostEnvironment, "hostEnvironment", "", "Environment name for host")
-	flag.StringVar(&o.hostRole, "hostRole", "", "Role name for host")
+	flag.StringVar(&o.name, "name", "", "Hostname or  mask like role-environment-* or full-hostname-name if -count 1")
+	flag.IntVar(&o.count, "count", 1, "Deployment hosts count")
+	flag.StringVar(&o.osFlavorName, "flavor", "", "Openstack flavor name")
+	flag.StringVar(&o.chefEnvironment, "chefEnvironment", "", "Environment name for host")
+	flag.StringVar(&o.chefRole, "chefRole", "", "Role name for host")
 	flag.StringVar(&o.osKeyName, "keyName", usr.Username, "Openstack admin key name")
 	flag.StringVar(&o.osAdminKeyPath, "keyPath", "", "Openstack admin key path")
-	flag.BoolVar(&o.allowKnifeFail, "allowKnifeFail", false, "Don't delete host after knife fail")
+	flag.StringVar(&o.user, "user", "cloud-user", "Openstack user")
 
+	flag.BoolVar(&o.ignoreFail, "ignoreFail", false, "Don't delete host after fail")
+	flag.IntVar(&o.concurrency, "concurrency", 5, "Concurrency bootstrap")
 
 	flag.StringVar(&o.logDir, "logDir", "logs", "Logs directory")
-	flag.StringVar(&o.privateKey, "privateKey", "", "SSH Private key for knife bootstrap")
-	flag.IntVar(&o.randomCount, "randomCount", 5, "Host mask random prefix")
+	flag.IntVar(&o.prefixCharts, "prefixCharts", 5, "Host mask random prefix")
 	flag.IntVar(&o.sshWaitRetry, "sshWaitRetry", 10, "SSH Retry count")
+
+	flag.StringVar(&o.chefVersion, "chefVersion", "12.20.3", "chef-client version")
+	flag.StringVar(&o.chefServerUrl, "chefServerUrl", "", "Chef Server URL")
+	flag.StringVar(&o.chefClientName, "chefClientName", "", "Chef client name")
+	flag.StringVar(&o.chefKeyPath, "chefKeyPath", "", "Chef client certificate path")
+
+	flag.StringVar(&o.chefValidationPath, "chefValidationPath", "", "Validation key path or ENV['CHEF_VALIDATION_PEM']")
 	flag.Parse()
 
-	if o.hostRole == "" {
-		return errors.New("Please provide -hostRole string")
+	if o.chefValidationPath == "" {
+		return errors.New("Please provide -chefValidationPath or environment variable VALIDATION_PEM")
+	} else {
+		o.chefValidationPem, err = ioutil.ReadFile(o.chefValidationPath)
+		if err != nil {
+			o.Log().Errorf("Validation read error: %s", err)
+		}
 	}
 
-	if o.hostEnvironment == "" {
-		return errors.New("Please provide -hostEnvironment string")
+	if o.chefKeyPath == "" {
+		return errors.New("Please provide -chefKeyPath string")
 	}
 
-	if o.hostMask == "" {
-		return errors.New("Please provide -hostMask string")
+	if o.chefClientName == "" {
+		return errors.New("Please provide -chefClientName string")
 	}
 
-	if o.hostCount == 0 {
-		return errors.New("Please provide -hostCount int")
+	if o.chefServerUrl == "" {
+		return errors.New("Please provide -chefServerUrl string")
+	}
+
+	if o.chefRole == "" {
+		return errors.New("Please provide -chefRole string")
+	}
+
+	if o.chefEnvironment == "" {
+		return errors.New("Please provide -chefEnvironment string")
+	}
+
+	if o.name == "" {
+		return errors.New("Please provide -name string")
+	}
+
+	if o.count == 0 {
+		return errors.New("Please provide -count int")
 	}
 
 	if len(o.osAdminKeyPath) == 0 {
@@ -169,7 +253,7 @@ func (o *NodeUP) params() error {
 		o.osAdminKey = string(dat)
 	}
 
-	if o.flavorName == "" {
+	if o.osFlavorName == "" {
 		return errors.New("Please provide -flavor string")
 	}
 
@@ -267,11 +351,11 @@ func (o *NodeUP) checkSSHPort(address string) bool {
 	time.Sleep(10 * time.Second) //Waiting ssh daemon
 	for {
 		conn, err := net.DialTimeout("tcp", address+":22", 3*time.Second)
-		defer conn.Close()
 		if err != nil {
 			o.Log().Errorf("Cannot connect to host %s #%d: %s", address, i+1, err.Error())
 			status = false
 		} else {
+			defer conn.Close()
 			status = true
 		}
 		i++
@@ -279,52 +363,10 @@ func (o *NodeUP) checkSSHPort(address string) bool {
 			break
 			status = false
 		}
+		time.Sleep(10 * time.Second)
 	}
+
 	return status
-}
-
-func (o *NodeUP) knifeBootstrap(hostname string, ip string, role string, environment string) bool {
-
-	if _, err := os.Stat(o.logDir); os.IsNotExist(err) {
-		o.Log().Infof("Creating logs directory in %s", o.logDir)
-		os.Mkdir(o.logDir, 0775)
-	}
-
-	commandLine := fmt.Sprintf("bootstrap " +
-		"%s -N %s -r role[%s] -E %s -y -x cloud-user --sudo --bootstrap-version 12.20.3 " +
-			"--no-host-key-verify", ip, hostname, role, environment)
-
-	//Custom ssh key for knife
-	if o.privateKey != "" {
-		commandLine = commandLine + fmt.Sprintf(" -i  %s", o.privateKey)
-	}
-
-	cmdArgs := strings.Fields(commandLine)
-	logFileName := o.logDir + "/" + hostname + ".log"
-	logFile, err := os.Create(logFileName)
-	if err != nil {
-		o.Log().Error("Cannot create logfile")
-		o.Log().Error(err)
-		return false
-	}
-	o.Log().Infof("Writing knife bootstrap output to file %s", logFileName)
-
-	cmd := exec.Command("knife", cmdArgs...)
-	cmd.Stdout = io.MultiWriter(logFile)
-	cmd.Stderr = cmd.Stdout
-	if err := cmd.Run(); err != nil {
-		o.Log().Errorf("Knife bootstrap error: %s", err)
-
-		if o.allowKnifeFail {
-			o.Log().Infof("Knife bootstrap fail on host %s. -allowKnifeFail true.")
-		} else {
-			o.deleteChefNode(hostname)
-			return false
-		}
-	}
-
-	o.Log().Infof("knife bootstrap node %s done", hostname)
-	return true
 }
 
 func (o *NodeUP) deleteChefNode(hostname string) {
@@ -350,5 +392,36 @@ func (o *NodeUP) isWildcard(string string) bool {
 		return true
 	} else {
 		return false
+	}
+}
+
+func (o *NodeUP) assertBootstrap(openstack *openstack.Openstack, chefClient *chef.ChefClient, id string, hostname string, err error) {
+	if o.ignoreFail {
+		o.Log().Warnf("Host %s bootstrap is fail. Skied")
+		return
+	}
+
+	if err != nil {
+		host := openstack.DeleteIfError(id, err)
+		chef, err := chefClient.CleanupNode(hostname, hostname)
+		if err != nil {
+			o.Log().Errorf("Chef cleanup node error %s", err)
+		}
+
+		if !host && !chef {
+			o.Log().Errorf("Can't cleanup node %s", hostname)
+			os.Exit(1)
+		}
+	}
+}
+
+func (o *NodeUP) deleteHost(openstack *openstack.Openstack, chefClient *chef.ChefClient, id string, hostname string) {
+	err := openstack.DeleteServer(id)
+	if err != nil {
+		o.Log().Errorf("Openstack delete server error %s", err)
+	}
+	_, err = chefClient.CleanupNode(hostname, hostname)
+	if err != nil {
+		o.Log().Errorf("Chef cleanup node error %s", err)
 	}
 }
