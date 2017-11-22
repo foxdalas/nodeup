@@ -18,36 +18,50 @@ go install github.com/foxdalas/nodeup/
 #### Options
 ```
 Usage of ./nodeup:
-  -allowKnifeFail
-    	Don't delete host after knife fail
+  -chefClientName string
+    	Chef client name
+  -chefEnvironment string
+    	Environment name for host
+  -chefKeyPath string
+    	Chef client certificate path
+  -chefRole string
+    	Role name for host
+  -chefServerUrl string
+    	Chef Server URL
+  -chefValidationPath string
+    	Validation key path or CHEF_VALIDATION_PEM
+  -chefVersion string
+    	chef-client version (default "12.20.3")
+  -concurrency int
+    	Concurrency bootstrap (default 5)
+  -count int
+    	Deployment hosts count (default 1)
   -flavor string
     	Openstack flavor name
-  -hostCount int
-    	Deployment hosts count (default 1)
-  -hostEnvironment string
-    	Environment name for host
-  -hostName string
-    	Hostname mask like role-environment-* or full-hostname-name if -hostCount 1
-  -hostRole string
-    	Role name for host
+  -ignoreFail
+    	Don't delete host after fail
+  -jenkinsMode
+    	Jenkins capability mode
   -keyName string
     	Openstack admin key name (default "fox")
-  -keyPath string
-    	Openstack admin key path
   -logDir string
     	Logs directory (default "logs")
-  -privateKey string
-    	SSH Private key for knife bootstrap
-  -randomCount int
+  -name string
+    	Hostname or  mask like role-environment-* or full-hostname-name if -count 1
+  -prefixCharts int
     	Host mask random prefix (default 5)
+  -publicKeyPath string
+    	Openstack admin key path
   -sshWaitRetry int
     	SSH Retry count (default 10)
+  -user string
+    	Openstack user (default "cloud-user")
 ```
 
 #### Example
 
 ```
-nodeup -flavor 4x8192 -hostName development-* -hostCount 1 -hostRole search -hostEnvironment development
+nodeup -flavor 4x8192 -name development-* -count 1 -chefRole search -chefEnvironment development
 ```
 
 ### Requirements environment variables

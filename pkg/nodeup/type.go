@@ -17,14 +17,14 @@ type NodeUP struct {
 	ignoreFail   bool
 	logDir       string
 
-	osAuthURL      string
-	osTenantName   string
-	osPassword     string
-	osUsername     string
-	osAdminKey     string
-	osAdminKeyPath string
-	osFlavorName   string
-	osKeyName      string
+	osAuthURL       string
+	osTenantName    string
+	osPassword      string
+	osUsername      string
+	osPublicKey     string
+	osPublicKeyPath string
+	osFlavorName    string
+	osKeyName       string
 
 	sshWaitRetry int
 
@@ -32,10 +32,17 @@ type NodeUP struct {
 	chefServerUrl      string
 	chefClientName     string
 	chefKeyPath        string
+	chefKeyPem         []byte
 	chefValidationPath string
 	chefValidationPem  []byte
 	chefEnvironment    string
 	chefRole           string
+
+	jenkinsMode   bool
+	jenkinsLogURL string
+
+	sshUser      string
+	sshUploadDir string
 
 	stopCh    chan struct{}
 	waitGroup sync.WaitGroup

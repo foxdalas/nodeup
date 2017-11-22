@@ -20,17 +20,26 @@ func New(nodeup nodeup.NodeUP, address string, user string) (*Ssh, error) {
 		client: nil,
 	}
 
-	cmd := exec.Command("ssh-agent")
-	err := cmd.Run()
-	if err != nil {
-		return s, err
+	if len(os.Getenv("SSH_AUTH_SOCK")) == 0 {
+		cmd := exec.Command("ssh-agent")
+		err := cmd.Run()
+		if err != nil {
+			return s, err
+		}
 	}
 
 	socket := os.Getenv("SSH_AUTH_SOCK")
+	stat, err := os.Lstat(socket)
+	if err != nil {
+		s.Log().Error(err)
+	}
+	s.Log().Info(stat.Size())
+
 	conn, err := net.Dial("unix", socket)
 	if err != nil {
 		return s, err
 	}
+	s.Log().Infof("Using SSH Agent with socket %s", socket)
 
 	agentClient := agent.NewClient(conn)
 
@@ -62,6 +71,7 @@ func (s *Ssh) sshSession() (*ssh.Session, error) {
 	if err != nil {
 		return session, err
 	}
+
 	//defer session.Close()
 
 	return session, err
@@ -88,6 +98,7 @@ func (s *Ssh) RunCommand(command string) error {
 }
 
 func (s *Ssh) RunCommandPipe(command string, outfile *os.File) error {
+
 	session, err := s.sshSession()
 	if err != nil {
 		s.Log().Errorf("session error: %s", err)

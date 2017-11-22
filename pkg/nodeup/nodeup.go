@@ -62,19 +62,27 @@ func (o *NodeUP) Init() {
 		o.Log().Panicf("Can't create more one host with not unique name. Please set -count 1")
 	}
 
-	s := openstack.New(o, o.osAdminKey, o.osKeyName, o.osFlavorName)
-	chefClient, err := chef.NewChefClient(o, o.chefClientName, o.chefKeyPath, o.chefServerUrl)
+	s := openstack.New(o, o.osPublicKey, o.osKeyName, o.osFlavorName)
+	chefClient, err := chef.NewChefClient(o, o.chefClientName, o.chefKeyPem, o.chefServerUrl)
 	if err != nil {
 		o.Log().Fatalf("Chef client error: %s", err)
 	}
 
 	for _, hostname := range o.nameGenerator(o.name, o.count) {
-		oHost := s.CreateSever(hostname)
+		if o.jenkinsMode {
+			o.Log().Infof("Processing log %s%s.log", o.jenkinsLogURL, hostname)
+		}
+
+		oHost, err := s.CreateSever(hostname)
+		if err != nil {
+			return
+		}
+
+		logFile := o.logDir + "/" + hostname + ".log"
+		outFile, err := os.Create(logFile)
+
 		var availableAddresses []string
 		for _, ip := range o.getPublicAddress(oHost.Addresses) {
-
-			logFile := o.logDir + "/" + hostname + ".log"
-			outFile, err := os.Create(logFile)
 
 			if o.checkSSHPort(ip) {
 				o.Log().Infof("SSH is accessible on host %s", hostname)
@@ -108,27 +116,27 @@ func (o *NodeUP) Init() {
 			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
 
 			//Create Bootstrap data
-			chefData, err := chef.New(o, hostname, o.chefServerUrl, o.chefValidationPem, []string{"role[" + o.chefRole + "]"})
+			chefData, err := chef.New(o, hostname, o.chefServerUrl, o.chefValidationPem, o.chefValidationPath, []string{"role[" + o.chefRole + "]"})
 			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
 
 			//Uploading bootstrap.json
-			err = ssh.TransferFile(chefData.BootstrapJson, "bootstrap.json", "/home/cloud-user")
+			err = ssh.TransferFile(chefData.BootstrapJson, "bootstrap.json", o.sshUploadDir)
 			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
 
 			//Uploading client.rb
-			err = ssh.TransferFile(chefData.ChefConfig, "client.rb", "/home/cloud-user")
+			err = ssh.TransferFile(chefData.ChefConfig, "client.rb", o.sshUploadDir)
 			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
 
 			//Uploading validation.pem
-			err = ssh.TransferFile(chefData.ValidationPem, "validation.pem", "/home/cloud-user")
+			err = ssh.TransferFile(chefData.ValidationPem, "validation.pem", o.sshUploadDir)
 			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
 
-			err = ssh.RunCommandPipe("sudo chmod 0600 /home/cloud-user/validation.pem", outFile)
+			err = ssh.RunCommandPipe("sudo chmod 0600 "+o.sshUploadDir+"/validation.pem", outFile)
 
 			err = ssh.RunCommandPipe("sudo chef-client -c /home/cloud-user/client.rb -E "+o.chefEnvironment+" -j "+"/home/cloud-user/bootstrap.json", outFile)
 			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
 
-			err = ssh.RunCommandPipe("rm client.rb && sudo rm validation.pem && rm /home/cloud-user/bootstrap.json", outFile)
+			err = ssh.RunCommandPipe("rm client.rb && sudo rm validation.pem && rm bootstrap.json", outFile)
 			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
 
 			o.deleteHost(s, chefClient, oHost.ID, hostname)
@@ -182,7 +190,7 @@ func (o *NodeUP) params() error {
 	flag.StringVar(&o.chefEnvironment, "chefEnvironment", "", "Environment name for host")
 	flag.StringVar(&o.chefRole, "chefRole", "", "Role name for host")
 	flag.StringVar(&o.osKeyName, "keyName", usr.Username, "Openstack admin key name")
-	flag.StringVar(&o.osAdminKeyPath, "keyPath", "", "Openstack admin key path")
+	flag.StringVar(&o.osPublicKeyPath, "publicKeyPath", "", "Openstack admin key path")
 	flag.StringVar(&o.user, "user", "cloud-user", "Openstack user")
 
 	flag.BoolVar(&o.ignoreFail, "ignoreFail", false, "Don't delete host after fail")
@@ -197,7 +205,13 @@ func (o *NodeUP) params() error {
 	flag.StringVar(&o.chefClientName, "chefClientName", "", "Chef client name")
 	flag.StringVar(&o.chefKeyPath, "chefKeyPath", "", "Chef client certificate path")
 
+	flag.StringVar(&o.sshUser, "sshUser", "cloud-user", "SSH Username")
+	flag.StringVar(&o.sshUploadDir, "sshUploadDir", "/home/"+o.sshUser, "SSH Upload directory")
+
 	flag.StringVar(&o.chefValidationPath, "chefValidationPath", "", "Validation key path or CHEF_VALIDATION_PEM")
+
+	flag.BoolVar(&o.jenkinsMode, "jenkinsMode", false, "Jenkins capability mode")
+
 	flag.Parse()
 
 	if o.chefValidationPath == "" && len(os.Getenv("CHEF_VALIDATION_PEM")) == 0 {
@@ -208,21 +222,38 @@ func (o *NodeUP) params() error {
 		} else {
 			o.chefValidationPem, err = ioutil.ReadFile(o.chefValidationPath)
 			if err != nil {
-				o.Log().Errorf("Validation read error: %s", err)
+				o.Log().Errorf("Chef validation read error: %s", err)
 			}
 		}
 	}
 
-	if o.chefKeyPath == "" {
-		return errors.New("Please provide -chefKeyPath string")
+	if o.chefKeyPath == "" && len(os.Getenv("CHEF_KEY_PEM")) == 0 {
+		return errors.New("Please provide -chefKeyPath or environment variable CHEF_KEY_PEM")
+	} else {
+		if len(os.Getenv("CHEF_KEY_PEM")) > 0 {
+			o.chefKeyPem = []byte(os.Getenv("CHEF_KEY_PEM"))
+		} else {
+			o.chefKeyPem, err = ioutil.ReadFile(o.chefKeyPath)
+			if err != nil {
+				o.Log().Errorf("Chef key read error: %s", err)
+			}
+		}
 	}
 
-	if o.chefClientName == "" {
-		return errors.New("Please provide -chefClientName string")
+	if o.chefServerUrl == "" && len(os.Getenv("CHEF_SERVER_URL")) == 0 {
+		return errors.New("Please provide -chefServerUrl or environment variable CHEF_SERVER_URL")
+	} else {
+		if len(os.Getenv("CHEF_SERVER_URL")) > 0 {
+			o.chefServerUrl = os.Getenv("CHEF_SERVER_URL")
+		}
 	}
 
-	if o.chefServerUrl == "" {
-		return errors.New("Please provide -chefServerUrl string")
+	if o.chefClientName == "" && len(os.Getenv("CHEF_CLIENT_NAME")) == 0 {
+		return errors.New("Please provide -chefClientName or environment variable CHEF_CLIENT_NAME")
+	} else {
+		if len(os.Getenv("CHEF_CLIENT_NAME")) > 0 {
+			o.chefClientName = os.Getenv("CHEF_CLIENT_NAME")
+		}
 	}
 
 	if o.chefRole == "" {
@@ -241,20 +272,18 @@ func (o *NodeUP) params() error {
 		return errors.New("Please provide -count int")
 	}
 
-	if len(o.osAdminKeyPath) == 0 {
-		keyFile := string(usr.HomeDir) + "/.ssh/id_rsa.pub"
-		dat, err := ioutil.ReadFile(keyFile)
-		if err != nil {
-			log.Fatal(err)
-		}
-		o.osAdminKey = string(dat)
+	if o.osPublicKeyPath == "" && len(os.Getenv("OS_PUBLIC_KEY")) == 0 {
+		return errors.New("Please provide -keyPath or environment variable OS_PUBLIC_KEY")
 	} else {
-		keyFile := o.osAdminKeyPath
-		dat, err := ioutil.ReadFile(keyFile)
-		if err != nil {
-			log.Fatal(err)
+		if o.osPublicKeyPath != "" {
+			dat, err := ioutil.ReadFile(o.osPublicKeyPath)
+			if err != nil {
+				log.Fatal(err)
+			}
+			o.osPublicKey = string(dat)
+		} else {
+			o.osPublicKey = os.Getenv("OS_PUBLIC_KEY")
 		}
-		o.osAdminKey = string(dat)
 	}
 
 	if o.osFlavorName == "" {
@@ -290,11 +319,8 @@ func (o *NodeUP) params() error {
 		return errors.New("Please provide OS_PASSWORD")
 	}
 
-	if len(o.osAdminKey) == 0 {
-		o.osAdminKey = os.Getenv("OS_ADMIN_KEY")
-		if (len(o.osAdminKey) == 0) && (len(o.osAdminKeyPath) == 0) {
-			return errors.New("Please provide OS_ADMIN_KEY or -keyPath")
-		}
+	if o.jenkinsMode {
+		o.jenkinsLogURL = os.Getenv("JOB_URL") + "ws/logs/"
 	}
 
 	return nil
@@ -410,6 +436,7 @@ func (o *NodeUP) assertBootstrap(openstack *openstack.Openstack, chefClient *che
 		chef, err := chefClient.CleanupNode(hostname, hostname)
 		if err != nil {
 			o.Log().Errorf("Chef cleanup node error %s", err)
+			os.Exit(1)
 		}
 
 		if !host && !chef {

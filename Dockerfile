@@ -4,5 +4,6 @@ RUN mkdir /app
 ADD . /app/
 WORKDIR /app
 RUN go build .
+RUN ls | grep -v nodeup | xargs rm -rf
 
-CMD ["go-wrapper", "run"]
+ENTRYPOINT ["go-wrapper", "run"]

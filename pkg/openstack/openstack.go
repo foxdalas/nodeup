@@ -108,7 +108,7 @@ func (o *Openstack) createAdminKey() bool {
 	return true
 }
 
-func (o *Openstack) CreateSever(hostname string) *servers.Server {
+func (o *Openstack) CreateSever(hostname string) (*servers.Server, error) {
 	if o.isServerExist(hostname) {
 		o.Log().Fatalf("Server %s already exists", hostname)
 	}
@@ -137,6 +137,7 @@ func (o *Openstack) CreateSever(hostname string) *servers.Server {
 	server, err := servers.Create(o.client, createOpts).Extract()
 	if err != nil {
 		o.Log().Errorf("Error: creating server: %s", err)
+		return nil, err
 	}
 
 	info := o.getServer(server.ID)
@@ -163,7 +164,7 @@ func (o *Openstack) CreateSever(hostname string) *servers.Server {
 			o.Log().Errorf("Timeout for server %s with status %s", info.Name, info.Status)
 		}
 	}
-	return info
+	return info, nil
 }
 
 func (o *Openstack) getServer(sid string) *servers.Server {

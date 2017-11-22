@@ -6,11 +6,10 @@ import (
 	"github.com/foxdalas/nodeup/pkg/nodeup_const"
 	"github.com/go-chef/chef"
 	"github.com/sirupsen/logrus"
-	"io/ioutil"
 	"text/template"
 )
 
-func New(nodeup nodeup.NodeUP, nodeName string, chefServerUrl string, validationData []byte, runlist []string) (chef *Chef, err error) {
+func New(nodeup nodeup.NodeUP, nodeName string, chefServerUrl string, validationData []byte, chefValidationPath string, runlist []string) (chef *Chef, err error) {
 
 	chefConfig, err := createConfig(nodeName, ":auto", "STDOUT", chefServerUrl, "chef-validator")
 	if err != nil {
@@ -41,7 +40,14 @@ func createConfig(nodeName string, logLevel string, logLocation string, chefServ
 	}
 
 	var buf bytes.Buffer
-	t, err := template.ParseFiles("templates/config.tmpl")
+	t := template.New("client.rb")
+	t, err := t.Parse(`
+log_level        {{ .LogLevel }}
+log_location     {{ .LogLocation }}
+chef_server_url  "{{ .ChefServerUrl }}"
+validation_client_name "{{ .ValidationClientName }}"
+node_name "{{ .NodeName }}"
+validation_key "/home/cloud-user/validation.pem"`)
 	if err != nil {
 		return nil, err
 	}
@@ -65,11 +71,7 @@ func (c *Chef) Log() *logrus.Entry {
 	return log
 }
 
-func NewChefClient(nodeup nodeup.NodeUP, clientName string, keyPath string, serverURL string) (*ChefClient, error) {
-	key, err := ioutil.ReadFile(keyPath)
-	if err != nil {
-		return nil, err
-	}
+func NewChefClient(nodeup nodeup.NodeUP, clientName string, key []byte, serverURL string) (*ChefClient, error) {
 
 	client, err := chef.NewClient(&chef.Config{
 		Name:    clientName,
