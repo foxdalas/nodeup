@@ -6,7 +6,7 @@ jobs:
   build:
     docker:
       # specify the version
-      - image: circleci/golang:1.8
+      - image: docker:17.05.0-ce-git
       
       # Specify service dependencies here if necessary
       # CircleCI maintains a library of pre-built images
@@ -20,7 +20,26 @@ jobs:
     working_directory: /go/src/github.com/foxdalas/nodeup
     steps:
       - checkout
-
-      # specify any bash command here prefixed with `run: `
-      - run: go get -v -t -d ./...
-      - run: go test -v ./...
+      - setup_remote_docker
+      - run:
+          name: Build nodeup Docker image
+          command: docker build -t foxdalas/nodeup:build .
+      - run:
+          name: Publish container
+          command: |
+            docker login -u $DOCKER_LOGIN -p $DOCKER_PASSWORD
+            BUILD_TAG="build"
+            GIT_COMMIT=`git rev-parse HEAD`
+            GIT_TAGS=`git tag --contains $GIT_COMMIT`
+            DOCKER_IMAGE="$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME"
+            if [[ $GIT_TAGS = "" ]]
+            then
+              IMAGE_TAGS="canary"
+            else
+              IMAGE_TAGS=`echo -e "$GIT_TAGS\nlatest"`
+            fi
+            for tag in $IMAGE_TAGS; do
+              echo $tag
+              docker tag  $DOCKER_IMAGE:$BUILD_TAG $DOCKER_IMAGE:$tag
+              docker push $DOCKER_IMAGE:$tag
+            done
