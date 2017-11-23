@@ -9,9 +9,14 @@ import (
 	"text/template"
 )
 
-func New(nodeup nodeup.NodeUP, nodeName string, chefServerUrl string, validationData []byte, chefValidationPath string, runlist []string) (chef *Chef, err error) {
+func New(nodeup nodeup.NodeUP, nodeName string, nodeDomain, chefServerUrl string, validationData []byte, chefValidationPath string, runlist []string) (chef *Chef, err error) {
 
 	chefConfig, err := createConfig(nodeName, ":auto", "STDOUT", chefServerUrl, "chef-validator")
+	if err != nil {
+		return nil, err
+	}
+
+	hosts, err := createHostFile(nodeName, nodeDomain)
 	if err != nil {
 		return nil, err
 	}
@@ -26,6 +31,7 @@ func New(nodeup nodeup.NodeUP, nodeName string, chefServerUrl string, validation
 		ChefConfig:    chefConfig,
 		BootstrapJson: bootstapJson,
 		ValidationPem: validationData,
+		Hosts:         hosts,
 	}
 	return
 }
@@ -52,6 +58,27 @@ validation_key "/home/cloud-user/validation.pem"`)
 		return nil, err
 	}
 	err = t.Execute(&buf, config) //step 2
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func createHostFile(nodeName string, domainName string) ([]byte, error) {
+	hosts := &Hosts{
+		Hostname: nodeName,
+		Domain:   domainName,
+	}
+
+	var buf bytes.Buffer
+	t := template.New("hosts")
+	t, err := t.Parse(`
+127.0.0.1       localhost
+127.0.1.1       {{ .Hostname }}.{{ .Domain }}} {{ .Hostname }}`)
+	if err != nil {
+		return nil, err
+	}
+	err = t.Execute(&buf, hosts)
 	if err != nil {
 		return nil, err
 	}

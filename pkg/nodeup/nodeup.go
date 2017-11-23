@@ -103,9 +103,10 @@ func (o *NodeUP) Init() {
 			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
 
 			//Create Bootstrap data
-			chefData, err := chef.New(o, hostname, o.chefServerUrl, o.chefValidationPem, o.chefValidationPath, []string{"role[" + o.chefRole + "]"})
+			chefData, err := chef.New(o, hostname, o.domain, o.chefServerUrl, o.chefValidationPem, o.chefValidationPath, []string{"role[" + o.chefRole + "]"})
 			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
 
+			o.Log().Infof("Bootstrapping host %s", hostname)
 			//Upload files via ssh
 			for fileName, fileData := range o.trunsferFiles(chefData) {
 				err = ssh.TransferFile(fileData, fileName, o.sshUploadDir)
@@ -117,8 +118,6 @@ func (o *NodeUP) Init() {
 				err = ssh.RunCommandPipe(command, outFile)
 				o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
 			}
-
-			o.deleteHost(s, chefClient, oHost.ID, hostname)
 		}
 	}
 }
@@ -164,6 +163,8 @@ func (o *NodeUP) params() error {
 	}
 
 	flag.StringVar(&o.name, "name", "", "Hostname or  mask like role-environment-* or full-hostname-name if -count 1")
+	flag.StringVar(&o.domain, "domain", "", "Domain name like hosts.example.com")
+
 	flag.IntVar(&o.count, "count", 1, "Deployment hosts count")
 	flag.StringVar(&o.osFlavorName, "flavor", "", "Openstack flavor name")
 	flag.StringVar(&o.chefEnvironment, "chefEnvironment", "", "Environment name for host")
@@ -245,6 +246,10 @@ func (o *NodeUP) params() error {
 
 	if o.name == "" {
 		return errors.New("Please provide -name string")
+	}
+
+	if o.domain == "" {
+		return errors.New("Please provide -domain string")
 	}
 
 	if o.count == 0 {
@@ -353,29 +358,30 @@ func (o *NodeUP) getPublicAddress(addresses map[string]interface{}) []string {
 	return result
 }
 
+func sshConnect(address string) error {
+	conn, err := net.DialTimeout("tcp", address+":22", 5*time.Second)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	return err
+}
+
 func (o *NodeUP) checkSSHPort(address string) bool {
-	i := 0
-	status := false
 	o.Log().Infof("Waiting SSH on host %s", address)
 	time.Sleep(10 * time.Second) //Waiting ssh daemon
-	for {
-		conn, err := net.DialTimeout("tcp", address+":22", 3*time.Second)
+	for i := 0; i < o.sshWaitRetry; i++ {
+		err := sshConnect(address)
 		if err != nil {
-			o.Log().Errorf("Cannot connect to host %s #%d: %s", address, i+1, err.Error())
-			status = false
+			o.Log().Warnf("Cannot connect to host %s #%d: %s", address, i+1, err.Error())
 		} else {
-			defer conn.Close()
-			status = true
-		}
-		i++
-		if i >= o.sshWaitRetry {
-			break
-			status = false
+			return true
 		}
 		time.Sleep(10 * time.Second)
 	}
+	o.Log().Errorf("Can't connect to host %s via ssh", address)
 
-	return status
+	return false
 }
 
 func (o *NodeUP) deleteChefNode(hostname string) {
@@ -443,12 +449,14 @@ func (o *NodeUP) trunsferFiles(chef *chef.Chef) map[string][]byte {
 	data["bootstrap.json"] = chef.BootstrapJson
 	data["validation.pem"] = chef.ValidationPem
 	data["client.rb"] = chef.ChefConfig
+	data["hosts"] = chef.Hosts
 
 	return data
 }
 
 func (o *NodeUP) runCommands(dir string, version string, environment string) []string {
 	data := []string{
+		"sudo mv hosts /etc/hosts && sudo hostname -F /etc/hostname",
 		"sudo apt-get update",
 		"sudo mkdir /etc/chef",
 		"wget -q https://omnitruck.chef.io/install.sh && sudo bash ./install.sh -v " + version + " && rm install.sh",

@@ -12,6 +12,7 @@ type Chef struct {
 	ChefConfig    []byte
 	BootstrapJson []byte
 	ValidationPem []byte
+	Hosts         []byte
 
 	log *logrus.Entry
 }
@@ -22,6 +23,10 @@ type Config struct {
 	ChefServerUrl        string
 	ValidationClientName string
 	NodeName             string
+}
+type Hosts struct {
+	Hostname string
+	Domain   string
 }
 
 type Bootstrap struct {

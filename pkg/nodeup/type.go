@@ -10,6 +10,7 @@ type NodeUP struct {
 	log     *log.Entry
 
 	name         string
+	domain       string
 	user         string
 	count        int
 	prefixCharts int
