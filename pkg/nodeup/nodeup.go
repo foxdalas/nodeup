@@ -54,7 +54,7 @@ func (o *NodeUP) Init() {
 	}
 
 	if _, err := os.Stat(o.logDir); os.IsNotExist(err) {
-		o.Log().Infof("Creating logs directory in %s", o.logDir)
+		o.Log().Debugf("Creating logs directory in %s", o.logDir)
 		os.Mkdir(o.logDir, 0775)
 	}
 
@@ -85,7 +85,7 @@ func (o *NodeUP) Init() {
 		for _, ip := range o.getPublicAddress(oHost.Addresses) {
 
 			if o.checkSSHPort(ip) {
-				o.Log().Infof("SSH is accessible on host %s", hostname)
+				o.Log().Debugf("SSH is accessible on host %s", hostname)
 				availableAddresses = append(availableAddresses, ip)
 			} else {
 				o.Log().Errorf("SSH is unreachable on host %s", hostname)
@@ -102,42 +102,21 @@ func (o *NodeUP) Init() {
 			ssh, err := ssh.New(o, ip, "cloud-user")
 			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
 
-			//Run apt-get update
-			err = ssh.RunCommandPipe("sudo apt-get update", outFile)
-			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
-
-			//Run mkdir /etc/chef
-			err = ssh.RunCommandPipe("sudo mkdir /etc/chef", outFile)
-			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
-
-			//Install chef-client
-			err = ssh.RunCommandPipe("wget -q https://omnitruck.chef.io/install.sh && "+
-				"sudo bash ./install.sh -v "+o.chefVersion+" && rm install.sh", outFile)
-			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
-
 			//Create Bootstrap data
 			chefData, err := chef.New(o, hostname, o.chefServerUrl, o.chefValidationPem, o.chefValidationPath, []string{"role[" + o.chefRole + "]"})
 			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
 
-			//Uploading bootstrap.json
-			err = ssh.TransferFile(chefData.BootstrapJson, "bootstrap.json", o.sshUploadDir)
-			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
+			//Upload files via ssh
+			for fileName, fileData := range o.trunsferFiles(chefData) {
+				err = ssh.TransferFile(fileData, fileName, o.sshUploadDir)
+				o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
+			}
 
-			//Uploading client.rb
-			err = ssh.TransferFile(chefData.ChefConfig, "client.rb", o.sshUploadDir)
-			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
-
-			//Uploading validation.pem
-			err = ssh.TransferFile(chefData.ValidationPem, "validation.pem", o.sshUploadDir)
-			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
-
-			err = ssh.RunCommandPipe("sudo chmod 0600 "+o.sshUploadDir+"/validation.pem", outFile)
-
-			err = ssh.RunCommandPipe("sudo chef-client -c /home/cloud-user/client.rb -E "+o.chefEnvironment+" -j "+"/home/cloud-user/bootstrap.json", outFile)
-			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
-
-			err = ssh.RunCommandPipe("rm client.rb && sudo rm validation.pem && rm bootstrap.json", outFile)
-			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
+			//Run command via ssh
+			for _, command := range o.runCommands(o.sshUploadDir, o.chefVersion, o.chefEnvironment) {
+				err = ssh.RunCommandPipe(command, outFile)
+				o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
+			}
 
 			o.deleteHost(s, chefClient, oHost.ID, hostname)
 		}
@@ -432,6 +411,7 @@ func (o *NodeUP) assertBootstrap(openstack *openstack.Openstack, chefClient *che
 	}
 
 	if err != nil {
+		o.Log().Errorf("Bootstrap error: %s", err)
 		host := openstack.DeleteIfError(id, err)
 		chef, err := chefClient.CleanupNode(hostname, hostname)
 		if err != nil {
@@ -443,6 +423,7 @@ func (o *NodeUP) assertBootstrap(openstack *openstack.Openstack, chefClient *che
 			o.Log().Errorf("Can't cleanup node %s", hostname)
 			os.Exit(1)
 		}
+		os.Exit(1)
 	}
 }
 
@@ -455,4 +436,25 @@ func (o *NodeUP) deleteHost(openstack *openstack.Openstack, chefClient *chef.Che
 	if err != nil {
 		o.Log().Errorf("Chef cleanup node error %s", err)
 	}
+}
+
+func (o *NodeUP) trunsferFiles(chef *chef.Chef) map[string][]byte {
+	data := make(map[string][]byte)
+	data["bootstrap.json"] = chef.BootstrapJson
+	data["validation.pem"] = chef.ValidationPem
+	data["client.rb"] = chef.ChefConfig
+
+	return data
+}
+
+func (o *NodeUP) runCommands(dir string, version string, environment string) []string {
+	data := []string{
+		"sudo apt-get update",
+		"sudo mkdir /etc/chef",
+		"wget -q https://omnitruck.chef.io/install.sh && sudo bash ./install.sh -v " + version + " && rm install.sh",
+		"sudo chmod 0600 " + dir + "/validation.pem",
+		"sudo chef-client -c " + dir + "/client.rb -E" + environment + " -j " + dir + "/bootstrap.json",
+		"sudo rm " + dir + "/client.rb && sudo rm " + dir + "/validation.pem && rm " + dir + "/bootstrap.json",
+	}
+	return data
 }

@@ -29,17 +29,12 @@ func New(nodeup nodeup.NodeUP, address string, user string) (*Ssh, error) {
 	}
 
 	socket := os.Getenv("SSH_AUTH_SOCK")
-	stat, err := os.Lstat(socket)
-	if err != nil {
-		s.Log().Error(err)
-	}
-	s.Log().Info(stat.Size())
 
 	conn, err := net.Dial("unix", socket)
 	if err != nil {
 		return s, err
 	}
-	s.Log().Infof("Using SSH Agent with socket %s", socket)
+	s.Log().Debugf("Using SSH Agent with socket %s", socket)
 
 	agentClient := agent.NewClient(conn)
 
@@ -86,13 +81,13 @@ func (s *Ssh) RunCommand(command string) error {
 
 	var b bytes.Buffer
 	session.Stdout = &b
-	s.Log().Infof("Running %s", command)
+	s.Log().Debugf("Running %s", command)
 	if err := session.Run(command); err != nil {
 		s.Log().Errorf("command error: %s", err)
 		return err
 	}
 
-	s.Log().Infof("Finished %s", command)
+	s.Log().Debugf("Finished %s", command)
 
 	return nil
 }
@@ -105,24 +100,24 @@ func (s *Ssh) RunCommandPipe(command string, outfile *os.File) error {
 	}
 	defer session.Close()
 
-	s.Log().Infof("Writing bootstrap output to file %s", outfile.Name())
+	s.Log().Debugf("Writing bootstrap output to file %s", outfile.Name())
 
 	session.Stdout = io.MultiWriter(outfile)
 	session.Stderr = session.Stdout
 
-	s.Log().Infof("Running %s", command)
+	s.Log().Debugf("Running %s", command)
 	if err := session.Run(command); err != nil {
 		s.Log().Errorf("chef-client error: %s", err)
 		return err
 	}
 
-	s.Log().Infof("Finished %s", command)
+	s.Log().Debugf("Finished %s", command)
 
 	return nil
 }
 
 func (s *Ssh) TransferFile(data []byte, name string, path string) error {
-	s.Log().Infof("Starting transferring file %s", path+"/"+name)
+	s.Log().Debugf("Starting transferring file %s", path+"/"+name)
 
 	sftp, err := sftp.NewClient(s.client)
 	s.assertError(err)
@@ -142,7 +137,7 @@ func (s *Ssh) TransferFile(data []byte, name string, path string) error {
 	_, err = sftp.Lstat(name)
 	s.assertError(err)
 
-	s.Log().Infof("Finished transferring file %s", path+"/"+name)
+	s.Log().Debugf("Finished transferring file %s", path+"/"+name)
 
 	return err
 }

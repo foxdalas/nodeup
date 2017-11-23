@@ -111,17 +111,40 @@ func (c *ChefClient) deleteChefClient(clientName string) (err error) {
 }
 
 func (c *ChefClient) CleanupNode(nodeName string, clientName string) (status bool, err error) {
-	err = c.deleteChefClient(clientName)
-	if err != nil {
-		status = false
-		return
-	}
-	err = c.deleteChefNode(clientName)
-	if err != nil {
-		status = false
-		return
+	if c.isClientExist(clientName) {
+		err = c.deleteChefClient(clientName)
+		if err != nil {
+			status = false
+			return
+		}
+		err = c.deleteChefNode(clientName)
+		if err != nil {
+			status = false
+			return
+		}
 	}
 	return
+}
+
+func (c *ChefClient) isNodeExist(nodeName string) bool {
+	if c.isNodeExist(nodeName) {
+		_, err := c.client.Nodes.Get(nodeName)
+		if err != nil {
+			return false
+		} else {
+			return true
+		}
+	}
+	return true
+}
+
+func (c *ChefClient) isClientExist(clientName string) bool {
+	_, err := c.client.Clients.Get(clientName)
+	if err != nil {
+		return false
+	} else {
+		return true
+	}
 }
 
 func (c *ChefClient) Log() *logrus.Entry {

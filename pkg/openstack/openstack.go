@@ -1,6 +1,7 @@
 package openstack
 
 import (
+	"errors"
 	"github.com/foxdalas/nodeup/pkg/nodeup_const"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
@@ -45,11 +46,11 @@ func (o *Openstack) assertError(err error, message string) {
 }
 
 func (o *Openstack) getFlavorByName() string {
-	o.Log().Infof("Searching FlavorID for Flavor name: %s", o.flavorName)
+	o.Log().Debugf("Searching FlavorID for Flavor name: %s", o.flavorName)
 	flavorID, err := flavors.IDFromName(o.client, o.flavorName)
 	o.assertError(err, "Flavor")
 
-	o.Log().Infof("Found flavor id: %s", flavorID)
+	o.Log().Debugf("Found flavor id: %s", flavorID)
 	return flavorID
 }
 
@@ -76,13 +77,13 @@ func (o *Openstack) createAdminKey() bool {
 	validation := false
 	for _, kp := range allKeyPairs {
 		if kp.Name == o.keyName {
-			o.Log().Infof("Keypair with name %s already exists", o.keyName)
-			o.Log().Infof("Checking key data for %s", o.keyName)
+			o.Log().Debugf("Keypair with name %s already exists", o.keyName)
+			o.Log().Debugf("Checking key data for %s", o.keyName)
 			if kp.PublicKey == string(o.key) {
-				o.Log().Infof("Keypair with name %s already exists", o.keyName)
+				o.Log().Debugf("Keypair with name %s already exists", o.keyName)
 				validation = true
 			} else {
-				o.Log().Infof("Deleting keypair with name %s", o.keyName)
+				o.Log().Debugf("Deleting keypair with name %s", o.keyName)
 				err := keypairs.Delete(o.client, o.keyName).ExtractErr()
 				if err != nil {
 					o.Log().Errorf("Can't delete keypair with name %s", o.keyName)
@@ -102,7 +103,7 @@ func (o *Openstack) createAdminKey() bool {
 			o.Log().Fatalf("Keypair %s: %s", o.keyName, err)
 			return false
 		}
-		o.Log().Infof("Keypair %s was created", keypair.Name)
+		o.Log().Debugf("Keypair %s was created", keypair.Name)
 	}
 
 	return true
@@ -142,7 +143,7 @@ func (o *Openstack) CreateSever(hostname string) (*servers.Server, error) {
 
 	info := o.getServer(server.ID)
 
-	o.Log().Infof("Waiting server %s up", info.Name)
+	o.Log().Debugf("Waiting server %s up", info.Name)
 	i := 0
 	status := ""
 	for {
@@ -158,10 +159,11 @@ func (o *Openstack) CreateSever(hostname string) (*servers.Server, error) {
 			o.Log().Infof("Server %s status is %s", info.Name, info.Status)
 			break
 		}
-		o.Log().Infof("Server %s status is %s", info.Name, info.Status)
+		o.Log().Debugf("Server %s status is %s", info.Name, info.Status)
 		i++
 		if i >= 10 {
 			o.Log().Errorf("Timeout for server %s with status %s", info.Name, info.Status)
+			return info, errors.New("Timeout")
 		}
 	}
 	return info, nil
@@ -175,7 +177,7 @@ func (o *Openstack) getServer(sid string) *servers.Server {
 func (o *Openstack) isServerExist(name string) bool {
 	_, err := servers.IDFromName(o.client, name)
 	if err != nil {
-		o.Log().Info(err)
+		o.Log().Debug(err)
 		return false
 	} else {
 		o.Log().Infof("Server with name %s already exist", name)
