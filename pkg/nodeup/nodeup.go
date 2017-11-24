@@ -68,58 +68,80 @@ func (o *NodeUP) Init() {
 		o.Log().Fatalf("Chef client error: %s", err)
 	}
 
+	var wg sync.WaitGroup
 	for _, hostname := range o.nameGenerator(o.name, o.count) {
-		if o.jenkinsMode {
-			o.Log().Infof("Processing log %s%s.log", o.jenkinsLogURL, hostname)
+		o.Log().Debugf("Starting goroutine for host %s", hostname)
+		wg.Add(1)
+		go o.bootstrapHost(s, chefClient, hostname, &wg)
+	}
+	o.Log().Debug(" Waiting for workers to finish")
+	wg.Wait()
+
+	os.Exit(o.exitcode)
+}
+
+func (o *NodeUP) bootstrapHost(s *openstack.Openstack, c *chef.ChefClient, hostname string, wg *sync.WaitGroup) bool {
+	defer wg.Done()
+	if o.jenkinsMode {
+		o.Log().Infof("Processing log %s%s.log", o.jenkinsLogURL, hostname)
+	}
+
+	oHost, err := s.CreateSever(hostname)
+	if err != nil {
+		return false
+	}
+
+	logFile := o.logDir + "/" + hostname + ".log"
+	outFile, err := os.Create(logFile)
+
+	var availableAddresses []string
+	for _, ip := range o.getPublicAddress(oHost.Addresses) {
+
+		if o.checkSSHPort(ip) {
+			o.Log().Debugf("SSH is accessible on host %s", hostname)
+			availableAddresses = append(availableAddresses, ip)
+		} else {
+			o.Log().Errorf("SSH is unreachable on host %s", hostname)
+			s.DeleteServer(oHost.ID)
+			return false
 		}
 
-		oHost, err := s.CreateSever(hostname)
-		if err != nil {
-			return
+		if len(availableAddresses) == 0 {
+			o.Log().Errorf("Can't bootstrap host %s no SSH access", hostname)
+			s.DeleteServer(oHost.ID)
+			return false
 		}
 
-		logFile := o.logDir + "/" + hostname + ".log"
-		outFile, err := os.Create(logFile)
+		//Create SSH connection
+		ssh, err := ssh.New(o, ip, "cloud-user")
+		if o.assertBootstrap(s, c, oHost.ID, hostname, err) {
+			return false
+		}
 
-		var availableAddresses []string
-		for _, ip := range o.getPublicAddress(oHost.Addresses) {
+		//Create Bootstrap data
+		chefData, err := chef.New(o, hostname, o.domain, o.chefServerUrl, o.chefValidationPem, o.chefValidationPath, []string{"role[" + o.chefRole + "]"})
+		if o.assertBootstrap(s, c, oHost.ID, hostname, err) {
+			return false
+		}
 
-			if o.checkSSHPort(ip) {
-				o.Log().Debugf("SSH is accessible on host %s", hostname)
-				availableAddresses = append(availableAddresses, ip)
-			} else {
-				o.Log().Errorf("SSH is unreachable on host %s", hostname)
-				s.DeleteServer(oHost.ID)
-				return
+		o.Log().Infof("Bootstrapping host %s", hostname)
+		//Upload files via ssh
+		for fileName, fileData := range o.trunsferFiles(chefData) {
+			err = ssh.TransferFile(fileData, fileName, o.sshUploadDir)
+			if o.assertBootstrap(s, c, oHost.ID, hostname, err) {
+				return false
 			}
+		}
 
-			if len(availableAddresses) == 0 {
-				o.Log().Errorf("Can't bootstrap host %s no SSH access", hostname)
-				s.DeleteServer(oHost.ID)
-			}
-
-			//Create SSH connection
-			ssh, err := ssh.New(o, ip, "cloud-user")
-			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
-
-			//Create Bootstrap data
-			chefData, err := chef.New(o, hostname, o.domain, o.chefServerUrl, o.chefValidationPem, o.chefValidationPath, []string{"role[" + o.chefRole + "]"})
-			o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
-
-			o.Log().Infof("Bootstrapping host %s", hostname)
-			//Upload files via ssh
-			for fileName, fileData := range o.trunsferFiles(chefData) {
-				err = ssh.TransferFile(fileData, fileName, o.sshUploadDir)
-				o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
-			}
-
-			//Run command via ssh
-			for _, command := range o.runCommands(o.sshUploadDir, o.chefVersion, o.chefEnvironment) {
-				err = ssh.RunCommandPipe(command, outFile)
-				o.assertBootstrap(s, chefClient, oHost.ID, hostname, err)
+		//Run command via ssh
+		for _, command := range o.runCommands(o.sshUploadDir, o.chefVersion, o.chefEnvironment) {
+			err = ssh.RunCommandPipe(command, outFile)
+			if o.assertBootstrap(s, c, oHost.ID, hostname, err) {
+				return false
 			}
 		}
 	}
+	return true
 }
 
 func makeLog() *log.Entry {
@@ -334,14 +356,16 @@ func (o *NodeUP) nameGenerator(prefix string, count int) []string {
 		Digits:             2,
 		Punctuation:        0,
 	}
-	s, err := garbler.NewPassword(&req)
-	if err != nil {
-		o.Log().Errorf("Can't generate prefix for hostname: %s", err)
+
+	for i := 0; i < count; i++ {
+		s, err := garbler.NewPassword(&req)
+		if err != nil {
+			o.Log().Errorf("Can't generate prefix for hostname: %s", err)
+		}
+
+		hostname := strings.Replace(prefix, "*", s, -1)
+		result = append(result, hostname)
 	}
-
-	hostname := strings.Replace(prefix, "*", s, -1)
-	result = append(result, hostname)
-
 	return result
 }
 
@@ -410,10 +434,11 @@ func (o *NodeUP) isWildcard(string string) bool {
 	}
 }
 
-func (o *NodeUP) assertBootstrap(openstack *openstack.Openstack, chefClient *chef.ChefClient, id string, hostname string, err error) {
+func (o *NodeUP) assertBootstrap(openstack *openstack.Openstack, chefClient *chef.ChefClient, id string, hostname string, err error) (exit bool) {
 	if o.ignoreFail {
 		o.Log().Warnf("Host %s bootstrap is fail. Skied")
-		return
+		o.exitcode = 0
+		return false
 	}
 
 	if err != nil {
@@ -422,15 +447,20 @@ func (o *NodeUP) assertBootstrap(openstack *openstack.Openstack, chefClient *che
 		chef, err := chefClient.CleanupNode(hostname, hostname)
 		if err != nil {
 			o.Log().Errorf("Chef cleanup node error %s", err)
-			os.Exit(1)
+			o.exitcode = 1
+			return true
 		}
 
 		if !host && !chef {
 			o.Log().Errorf("Can't cleanup node %s", hostname)
-			os.Exit(1)
+			o.exitcode = 1
+			return true
 		}
-		os.Exit(1)
+		o.exitcode = 1
+		return true
 	}
+	o.exitcode = 0
+	return false
 }
 
 func (o *NodeUP) deleteHost(openstack *openstack.Openstack, chefClient *chef.ChefClient, id string, hostname string) {

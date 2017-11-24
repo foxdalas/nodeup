@@ -45,6 +45,8 @@ type NodeUP struct {
 	sshUser      string
 	sshUploadDir string
 
+	exitcode int
+
 	stopCh    chan struct{}
 	waitGroup sync.WaitGroup
 }
