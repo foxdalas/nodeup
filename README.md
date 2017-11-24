@@ -2,7 +2,7 @@
 
 [![CircleCI](https://img.shields.io/circleci/project/github/foxdalas/nodeup.svg)](https://circleci.com/gh/foxdalas/nodeup)
 [![Docker Pulls](https://img.shields.io/docker/pulls/foxdalas/nodeup.svg?maxAge=604800)](https://hub.docker.com/r/foxdalas/nodeup/)
-
+[![Go Report Card](https://goreportcard.com/badge/github.com/foxdalas/nodeup)](https://goreportcard.com/report/github.com/foxdalas/nodeup)
 
 Server provisioning with Openstack API and Knife Bootstrap.
 

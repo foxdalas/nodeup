@@ -74,7 +74,7 @@ func createHostFile(nodeName string, domainName string) ([]byte, error) {
 	t := template.New("hosts")
 	t, err := t.Parse(`
 127.0.0.1       localhost
-127.0.1.1       {{ .Hostname }}.{{ .Domain }}} {{ .Hostname }}`)
+127.0.1.1       {{ .Hostname }}.{{ .Domain }} {{ .Hostname }}`)
 	if err != nil {
 		return nil, err
 	}
