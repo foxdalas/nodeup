@@ -6,11 +6,13 @@ import (
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/keypairs"
+	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/networks"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/images"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
 	"github.com/sirupsen/logrus"
 	"os"
+	"regexp"
 	"time"
 )
 
@@ -59,6 +61,28 @@ func (o *Openstack) getImageByName() string {
 	o.assertError(err, "Error image")
 
 	return imageID
+}
+
+func (o *Openstack) getNetworks() ([]string, error) {
+	var networksID []string
+
+	allPages, err := networks.List(o.client).AllPages()
+	if err != nil {
+		o.Log().Errorf("List networks: %s", err)
+		return networksID, err
+	}
+	allNetworks, err := networks.ExtractNetworks(allPages)
+	if err != nil {
+		o.Log().Errorf("Extract networks: %s", err)
+		return networksID, err
+	}
+
+	for _, net := range allNetworks {
+		if regexp.MustCompile(`internet`).MatchString(net.Label) {
+			networksID = append(networksID, net.ID)
+		}
+	}
+	return networksID, err
 }
 
 func (o *Openstack) createAdminKey() bool {
@@ -116,6 +140,11 @@ func (o *Openstack) CreateSever(hostname string) (*servers.Server, error) {
 
 	flavorID := o.getFlavorByName()
 	imageID := o.getImageByName()
+	networksIDs, err := o.getNetworks()
+	if err != nil {
+		o.Log().Errorf("Error networks: %s", err)
+		return nil, err
+	}
 
 	o.Log().Infof("Creating server with hostname %s", hostname)
 
@@ -126,7 +155,7 @@ func (o *Openstack) CreateSever(hostname string) (*servers.Server, error) {
 		FlavorRef: flavorID,
 		ImageRef:  imageID,
 		Networks: []servers.Network{
-			servers.Network{UUID: "3ad3f99c-bba2-4515-b190-f13258956450"},
+			{UUID: networksIDs[0]},
 		},
 	}
 
@@ -159,10 +188,19 @@ func (o *Openstack) CreateSever(hostname string) (*servers.Server, error) {
 			o.Log().Infof("Server %s status is %s", info.Name, info.Status)
 			break
 		}
+		if info.Status == "ERROR" {
+			o.Log().Errorf("Bootstrap error: %s", info.Name)
+			o.Log().Errorf("Status: %s", info.Status)
+			o.Log().Errorf("Fault message: %s", info.Fault.Message)
+			o.Log().Errorf("Fault code: %d", info.Fault.Code)
+			o.DeleteServer(server.ID)
+			return info, errors.New(info.Fault.Message)
+		}
 		o.Log().Debugf("Server %s status is %s", info.Name, info.Status)
 		i++
 		if i >= 10 {
 			o.Log().Errorf("Timeout for server %s with status %s", info.Name, info.Status)
+			o.Log().Errorf("Fault: ", info.Fault.Message)
 			return info, errors.New("Timeout")
 		}
 	}

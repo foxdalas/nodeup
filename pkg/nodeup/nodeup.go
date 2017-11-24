@@ -37,6 +37,8 @@ func New(version string) *NodeUP {
 func (o *NodeUP) Init() {
 	o.Log().Infof("NodeUP %s starting", o.version)
 
+	o.exitcode = 0
+
 	// handle sigterm correctly
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
@@ -72,7 +74,12 @@ func (o *NodeUP) Init() {
 	for _, hostname := range o.nameGenerator(o.name, o.count) {
 		o.Log().Debugf("Starting goroutine for host %s", hostname)
 		wg.Add(1)
-		go o.bootstrapHost(s, chefClient, hostname, &wg)
+		go func() {
+
+			if !o.bootstrapHost(s, chefClient, hostname, &wg) {
+				o.exitcode = 1
+			}
+		}()
 	}
 	o.Log().Debug(" Waiting for workers to finish")
 	wg.Wait()
@@ -93,6 +100,9 @@ func (o *NodeUP) bootstrapHost(s *openstack.Openstack, c *chef.ChefClient, hostn
 
 	logFile := o.logDir + "/" + hostname + ".log"
 	outFile, err := os.Create(logFile)
+	if err != nil {
+		return false
+	}
 
 	var availableAddresses []string
 	for _, ip := range o.getPublicAddress(oHost.Addresses) {
@@ -113,7 +123,7 @@ func (o *NodeUP) bootstrapHost(s *openstack.Openstack, c *chef.ChefClient, hostn
 		}
 
 		//Create SSH connection
-		ssh, err := ssh.New(o, ip, "cloud-user")
+		sshClient, err := ssh.New(o, ip, "cloud-user")
 		if o.assertBootstrap(s, c, oHost.ID, hostname, err) {
 			return false
 		}
@@ -127,7 +137,7 @@ func (o *NodeUP) bootstrapHost(s *openstack.Openstack, c *chef.ChefClient, hostn
 		o.Log().Infof("Bootstrapping host %s", hostname)
 		//Upload files via ssh
 		for fileName, fileData := range o.trunsferFiles(chefData) {
-			err = ssh.TransferFile(fileData, fileName, o.sshUploadDir)
+			err = sshClient.TransferFile(fileData, fileName, o.sshUploadDir)
 			if o.assertBootstrap(s, c, oHost.ID, hostname, err) {
 				return false
 			}
@@ -135,7 +145,7 @@ func (o *NodeUP) bootstrapHost(s *openstack.Openstack, c *chef.ChefClient, hostn
 
 		//Run command via ssh
 		for _, command := range o.runCommands(o.sshUploadDir, o.chefVersion, o.chefEnvironment) {
-			err = ssh.RunCommandPipe(command, outFile)
+			err = sshClient.RunCommandPipe(command, outFile)
 			if o.assertBootstrap(s, c, oHost.ID, hostname, err) {
 				return false
 			}
@@ -186,7 +196,7 @@ func (o *NodeUP) params() error {
 
 	flag.StringVar(&o.name, "name", "", "Hostname or  mask like role-environment-* or full-hostname-name if -count 1")
 	flag.StringVar(&o.domain, "domain", "", "Domain name like hosts.example.com")
-
+	flag.StringVar(&o.logDir, "logDir", "logs", "Logs directory")
 	flag.IntVar(&o.count, "count", 1, "Deployment hosts count")
 	flag.StringVar(&o.osFlavorName, "flavor", "", "Openstack flavor name")
 	flag.StringVar(&o.chefEnvironment, "chefEnvironment", "", "Environment name for host")
@@ -194,24 +204,17 @@ func (o *NodeUP) params() error {
 	flag.StringVar(&o.osKeyName, "keyName", usr.Username, "Openstack admin key name")
 	flag.StringVar(&o.osPublicKeyPath, "publicKeyPath", "", "Openstack admin key path")
 	flag.StringVar(&o.user, "user", "cloud-user", "Openstack user")
-
 	flag.BoolVar(&o.ignoreFail, "ignoreFail", false, "Don't delete host after fail")
 	flag.IntVar(&o.concurrency, "concurrency", 5, "Concurrency bootstrap")
-
-	flag.StringVar(&o.logDir, "logDir", "logs", "Logs directory")
 	flag.IntVar(&o.prefixCharts, "prefixCharts", 5, "Host mask random prefix")
 	flag.IntVar(&o.sshWaitRetry, "sshWaitRetry", 10, "SSH Retry count")
-
 	flag.StringVar(&o.chefVersion, "chefVersion", "12.20.3", "chef-client version")
 	flag.StringVar(&o.chefServerUrl, "chefServerUrl", "", "Chef Server URL")
 	flag.StringVar(&o.chefClientName, "chefClientName", "", "Chef client name")
 	flag.StringVar(&o.chefKeyPath, "chefKeyPath", "", "Chef client certificate path")
-
+	flag.StringVar(&o.chefValidationPath, "chefValidationPath", "", "Validation key path or CHEF_VALIDATION_PEM")
 	flag.StringVar(&o.sshUser, "sshUser", "cloud-user", "SSH Username")
 	flag.StringVar(&o.sshUploadDir, "sshUploadDir", "/home/"+o.sshUser, "SSH Upload directory")
-
-	flag.StringVar(&o.chefValidationPath, "chefValidationPath", "", "Validation key path or CHEF_VALIDATION_PEM")
-
 	flag.BoolVar(&o.jenkinsMode, "jenkinsMode", false, "Jenkins capability mode")
 
 	flag.Parse()
@@ -437,21 +440,20 @@ func (o *NodeUP) isWildcard(string string) bool {
 func (o *NodeUP) assertBootstrap(openstack *openstack.Openstack, chefClient *chef.ChefClient, id string, hostname string, err error) (exit bool) {
 	if o.ignoreFail {
 		o.Log().Warnf("Host %s bootstrap is fail. Skied")
-		o.exitcode = 0
 		return false
 	}
 
 	if err != nil {
 		o.Log().Errorf("Bootstrap error: %s", err)
 		host := openstack.DeleteIfError(id, err)
-		chef, err := chefClient.CleanupNode(hostname, hostname)
+		chefClient, err := chefClient.CleanupNode(hostname, hostname)
 		if err != nil {
 			o.Log().Errorf("Chef cleanup node error %s", err)
 			o.exitcode = 1
 			return true
 		}
 
-		if !host && !chef {
+		if !host && !chefClient {
 			o.Log().Errorf("Can't cleanup node %s", hostname)
 			o.exitcode = 1
 			return true
@@ -459,7 +461,6 @@ func (o *NodeUP) assertBootstrap(openstack *openstack.Openstack, chefClient *che
 		o.exitcode = 1
 		return true
 	}
-	o.exitcode = 0
 	return false
 }
 
@@ -493,6 +494,7 @@ func (o *NodeUP) runCommands(dir string, version string, environment string) []s
 		"sudo chmod 0600 " + dir + "/validation.pem",
 		"sudo chef-client -c " + dir + "/client.rb -E" + environment + " -j " + dir + "/bootstrap.json",
 		"sudo rm " + dir + "/client.rb && sudo rm " + dir + "/validation.pem && rm " + dir + "/bootstrap.json",
+		"sudo chef-client",
 	}
 	return data
 }

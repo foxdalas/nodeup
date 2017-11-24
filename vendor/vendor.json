@@ -3,6 +3,13 @@
 	"ignore": "test",
 	"package": [
 		{
+			"checksumSHA1": "OFu4xJEIjiI8Suu+j/gabfp+y6Q=",
+			"origin": "github.com/stretchr/testify/vendor/github.com/davecgh/go-spew/spew",
+			"path": "github.com/davecgh/go-spew/spew",
+			"revision": "2aa2c176b9dab406a6970f6a55f513e8a8c8b18f",
+			"revisionTime": "2017-08-14T20:04:35Z"
+		},
+		{
 			"checksumSHA1": "tz4HxelL2LROoMsMUIoQIxGDwZY=",
 			"path": "github.com/go-chef/chef",
 			"revision": "d4979acec76bdfb27d77e4ffeee96578444110ec",
@@ -23,6 +30,12 @@
 		{
 			"checksumSHA1": "jOyPWAJGRqLHofGLL/aiYBZzJR0=",
 			"path": "github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/keypairs",
+			"revision": "0b6b13c4dd9e07a89f83cbe4617c13ad646d6362",
+			"revisionTime": "2017-11-12T05:21:32Z"
+		},
+		{
+			"checksumSHA1": "xG0QCjMt/QuXDzs7L2J+PvhZZTU=",
+			"path": "github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/networks",
 			"revision": "0b6b13c4dd9e07a89f83cbe4617c13ad646d6362",
 			"revisionTime": "2017-11-12T05:21:32Z"
 		},
@@ -63,6 +76,12 @@
 			"revisionTime": "2017-11-12T05:21:32Z"
 		},
 		{
+			"checksumSHA1": "hmTj0vghsx3PEnkk3b3NUXWC2Ew=",
+			"path": "github.com/gophercloud/gophercloud/openstack/networking/v2/networks",
+			"revision": "0b6b13c4dd9e07a89f83cbe4617c13ad646d6362",
+			"revisionTime": "2017-11-12T05:21:32Z"
+		},
+		{
 			"checksumSHA1": "hOTxf5bdm8+cwSTO+OO/maDz6ss=",
 			"path": "github.com/gophercloud/gophercloud/openstack/utils",
 			"revision": "0b6b13c4dd9e07a89f83cbe4617c13ad646d6362",
@@ -99,10 +118,23 @@
 			"revisionTime": "2017-11-04T19:48:40Z"
 		},
 		{
+			"checksumSHA1": "zKKp5SZ3d3ycKe4EKMNT0BqAWBw=",
+			"origin": "github.com/stretchr/testify/vendor/github.com/pmezard/go-difflib/difflib",
+			"path": "github.com/pmezard/go-difflib/difflib",
+			"revision": "2aa2c176b9dab406a6970f6a55f513e8a8c8b18f",
+			"revisionTime": "2017-08-14T20:04:35Z"
+		},
+		{
 			"checksumSHA1": "BYvROBsiyAXK4sq6yhDe8RgT4LM=",
 			"path": "github.com/sirupsen/logrus",
 			"revision": "89742aefa4b206dcf400792f3bd35b542998eb3b",
 			"revisionTime": "2017-08-22T13:27:46Z"
+		},
+		{
+			"checksumSHA1": "mGbTYZ8dHVTiPTTJu3ktp+84pPI=",
+			"path": "github.com/stretchr/testify/assert",
+			"revision": "2aa2c176b9dab406a6970f6a55f513e8a8c8b18f",
+			"revisionTime": "2017-08-14T20:04:35Z"
 		},
 		{
 			"checksumSHA1": "IQkUIOnvlf0tYloFx9mLaXSvXWQ=",
