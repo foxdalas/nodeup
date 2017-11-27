@@ -81,7 +81,7 @@ func (o *NodeUP) Init() {
 			}
 		}()
 	}
-	o.Log().Debug(" Waiting for workers to finish")
+	o.Log().Debug("Waiting for workers to finish")
 	wg.Wait()
 
 	os.Exit(o.exitcode)
@@ -136,7 +136,7 @@ func (o *NodeUP) bootstrapHost(s *openstack.Openstack, c *chef.ChefClient, hostn
 
 		o.Log().Infof("Bootstrapping host %s", hostname)
 		//Upload files via ssh
-		for fileName, fileData := range o.trunsferFiles(chefData) {
+		for fileName, fileData := range o.transferFiles(chefData) {
 			err = sshClient.TransferFile(fileData, fileName, o.sshUploadDir)
 			if o.assertBootstrap(s, c, oHost.ID, hostname, err) {
 				return false
@@ -350,6 +350,8 @@ func (o *NodeUP) Version() string {
 
 func (o *NodeUP) nameGenerator(prefix string, count int) []string {
 
+	o.Log().Debugf("Generation hostname for %d hosts", count)
+
 	var result []string
 
 	req := garbler.PasswordStrengthRequirements{
@@ -369,6 +371,7 @@ func (o *NodeUP) nameGenerator(prefix string, count int) []string {
 		hostname := strings.Replace(prefix, "*", s, -1)
 		result = append(result, hostname)
 	}
+	o.Log().Debugf("Hosts: %s", result)
 	return result
 }
 
@@ -475,7 +478,7 @@ func (o *NodeUP) deleteHost(openstack *openstack.Openstack, chefClient *chef.Che
 	}
 }
 
-func (o *NodeUP) trunsferFiles(chef *chef.Chef) map[string][]byte {
+func (o *NodeUP) transferFiles(chef *chef.Chef) map[string][]byte {
 	data := make(map[string][]byte)
 	data["bootstrap.json"] = chef.BootstrapJson
 	data["validation.pem"] = chef.ValidationPem
