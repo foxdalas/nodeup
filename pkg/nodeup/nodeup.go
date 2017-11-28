@@ -74,12 +74,12 @@ func (o *NodeUP) Init() {
 	for _, hostname := range o.nameGenerator(o.name, o.count) {
 		o.Log().Debugf("Starting goroutine for host %s", hostname)
 		wg.Add(1)
-		go func() {
+		go func(hostname string) {
 
 			if !o.bootstrapHost(s, chefClient, hostname, &wg) {
 				o.exitcode = 1
 			}
-		}()
+		}(hostname)
 	}
 	o.Log().Debug("Waiting for workers to finish")
 	wg.Wait()
@@ -362,16 +362,21 @@ func (o *NodeUP) nameGenerator(prefix string, count int) []string {
 		Punctuation:        0,
 	}
 
-	for i := 0; i < count; i++ {
+	//Infinity loop for find duplicates
+	i := 0
+	for {
+		if i == count {
+			break
+		}
 		s, err := garbler.NewPassword(&req)
 		if err != nil {
 			o.Log().Errorf("Can't generate prefix for hostname: %s", err)
 		}
-
-		hostname := strings.Replace(prefix, "*", s, -1)
-		result = append(result, hostname)
+		if !contains(result, s) {
+			result = append(result, strings.Replace(prefix, "*", s, -1))
+			i++
+		}
 	}
-	o.Log().Debugf("Hosts: %s", result)
 	return result
 }
 
@@ -500,4 +505,14 @@ func (o *NodeUP) runCommands(dir string, version string, environment string) []s
 		"sudo chef-client",
 	}
 	return data
+}
+
+func contains(slice []string, item string) bool {
+	set := make(map[string]struct{}, len(slice))
+	for _, s := range slice {
+		set[s] = struct{}{}
+	}
+
+	_, ok := set[item]
+	return ok
 }
