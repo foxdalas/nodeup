@@ -338,6 +338,7 @@ func (o *NodeUP) params() error {
 func (o *NodeUP) Stop() {
 	o.Log().Info("shutting things down")
 	close(o.stopCh)
+	os.Exit(0)
 }
 
 func (o *NodeUP) Log() *log.Entry {
