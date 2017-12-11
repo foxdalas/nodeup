@@ -13,6 +13,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"os"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -63,7 +64,8 @@ func (o *Openstack) getImageByName() string {
 	return imageID
 }
 
-func (o *Openstack) getNetworks() ([]string, error) {
+func (o *Openstack) getNetworks(defineNetworks string) ([]string, error) {
+	var selectedNetworks []string
 	var networksID []string
 
 	allPages, err := networks.List(o.client).AllPages()
@@ -76,10 +78,16 @@ func (o *Openstack) getNetworks() ([]string, error) {
 		o.Log().Errorf("Extract networks: %s", err)
 		return networksID, err
 	}
-
+	if len(defineNetworks) > 0 {
+		selectedNetworks = strings.Split(defineNetworks, ",")
+	} else {
+		selectedNetworks = append(selectedNetworks, "internet")
+	}
 	for _, net := range allNetworks {
-		if regexp.MustCompile(`internet`).MatchString(net.Label) {
-			networksID = append(networksID, net.ID)
+		for _, selected := range selectedNetworks {
+			if regexp.MustCompile(selected).MatchString(net.Label) {
+				networksID = append(networksID, net.ID)
+			}
 		}
 	}
 	return networksID, err
@@ -133,14 +141,14 @@ func (o *Openstack) createAdminKey() bool {
 	return true
 }
 
-func (o *Openstack) CreateSever(hostname string) (*servers.Server, error) {
+func (o *Openstack) CreateSever(hostname string, networks string) (*servers.Server, error) {
 	if o.isServerExist(hostname) {
 		o.Log().Fatalf("Server %s already exists", hostname)
 	}
 
 	flavorID := o.getFlavorByName()
 	imageID := o.getImageByName()
-	networksIDs, err := o.getNetworks()
+	networksIDs, err := o.getNetworks(networks)
 	if err != nil {
 		o.Log().Errorf("Error networks: %s", err)
 		return nil, err
