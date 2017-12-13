@@ -167,13 +167,17 @@ func (o *Openstack) CreateSever(hostname string, networks string, private bool) 
 
 	o.createAdminKey()
 
+	var s []servers.Network
+
+	for _, n := range networksIDs {
+		s = append(s, servers.Network{UUID: n})
+	}
+
 	serverCreateOpts := servers.CreateOpts{
 		Name:      hostname,
 		FlavorRef: flavorID,
 		ImageRef:  imageID,
-		Networks: []servers.Network{
-			{UUID: networksIDs[0]},
-		},
+		Networks:  s,
 	}
 
 	createOpts := keypairs.CreateOptsExt{
