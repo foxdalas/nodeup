@@ -391,7 +391,13 @@ func (o *NodeUP) getPublicAddress(addresses map[string]interface{}) []string {
 	for _, networks := range addresses {
 		for _, addrs := range networks.([]interface{}) {
 			ip := addrs.(map[string]interface{})["addr"].(string)
-			result = append(result, ip)
+			isPrivate, err := privateIP(ip)
+			if err != nil {
+				o.Log().Error(err)
+			}
+			if !isPrivate {
+				result = append(result, ip)
+			}
 		}
 	}
 	return result
@@ -519,4 +525,19 @@ func contains(slice []string, item string) bool {
 
 	_, ok := set[item]
 	return ok
+}
+
+func privateIP(ip string) (bool, error) {
+	var err error
+	private := false
+	IP := net.ParseIP(ip)
+	if IP == nil {
+		err = errors.New("Invalid IP")
+	} else {
+		_, private24BitBlock, _ := net.ParseCIDR("10.0.0.0/8")
+		_, private20BitBlock, _ := net.ParseCIDR("172.16.0.0/12")
+		_, private16BitBlock, _ := net.ParseCIDR("192.168.0.0/16")
+		private = private24BitBlock.Contains(IP) || private20BitBlock.Contains(IP) || private16BitBlock.Contains(IP)
+	}
+	return private, err
 }
