@@ -18,6 +18,7 @@ type NodeUP struct {
 	ignoreFail     bool
 	logDir         string
 	defineNetworks string
+	privateNetwork bool
 
 	osAuthURL       string
 	osTenantName    string

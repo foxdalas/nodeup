@@ -93,7 +93,7 @@ func (o *NodeUP) bootstrapHost(s *openstack.Openstack, c *chef.ChefClient, hostn
 		o.Log().Infof("Processing log %s%s.log", o.jenkinsLogURL, hostname)
 	}
 
-	oHost, err := s.CreateSever(hostname, o.defineNetworks)
+	oHost, err := s.CreateSever(hostname, o.defineNetworks, o.privateNetwork)
 	if err != nil {
 		return false
 	}
@@ -216,6 +216,7 @@ func (o *NodeUP) params() error {
 	flag.StringVar(&o.sshUser, "sshUser", "cloud-user", "SSH Username")
 	flag.StringVar(&o.sshUploadDir, "sshUploadDir", "/home/"+o.sshUser, "SSH Upload directory")
 	flag.StringVar(&o.defineNetworks, "networks", "", "Define networks like 8.8.8.0/24, 10.0.0.0/24")
+	flag.BoolVar(&o.privateNetwork, "privateNetwork", false, "Add Private network")
 
 	flag.BoolVar(&o.jenkinsMode, "jenkinsMode", false, "Jenkins capability mode")
 

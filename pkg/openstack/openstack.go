@@ -64,7 +64,7 @@ func (o *Openstack) getImageByName() string {
 	return imageID
 }
 
-func (o *Openstack) getNetworks(defineNetworks string) ([]string, error) {
+func (o *Openstack) getNetworks(defineNetworks string, private bool) ([]string, error) {
 	var selectedNetworks []string
 	var networksID []string
 
@@ -90,6 +90,15 @@ func (o *Openstack) getNetworks(defineNetworks string) ([]string, error) {
 			}
 		}
 	}
+
+	if private {
+		for _, net := range allNetworks {
+			if net.Label == "local_private" {
+				networksID = append(networksID, net.ID)
+			}
+		}
+	}
+
 	return networksID, err
 }
 
@@ -141,14 +150,14 @@ func (o *Openstack) createAdminKey() bool {
 	return true
 }
 
-func (o *Openstack) CreateSever(hostname string, networks string) (*servers.Server, error) {
+func (o *Openstack) CreateSever(hostname string, networks string, private bool) (*servers.Server, error) {
 	if o.isServerExist(hostname) {
 		o.Log().Fatalf("Server %s already exists", hostname)
 	}
 
 	flavorID := o.getFlavorByName()
 	imageID := o.getImageByName()
-	networksIDs, err := o.getNetworks(networks)
+	networksIDs, err := o.getNetworks(networks, private)
 	if err != nil {
 		o.Log().Errorf("Error networks: %s", err)
 		return nil, err
