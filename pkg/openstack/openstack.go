@@ -272,3 +272,8 @@ func (o *Openstack) DeleteIfError(id string, err error) bool {
 		return false
 	}
 }
+
+func (o *Openstack) IDFromName(hostname string) (string, error) {
+	id, err := servers.IDFromName(o.client, hostname)
+	return id, err
+}

@@ -47,6 +47,8 @@ type NodeUP struct {
 	sshUser      string
 	sshUploadDir string
 
+	deleteNodes string
+
 	exitcode int
 
 	stopCh    chan struct{}

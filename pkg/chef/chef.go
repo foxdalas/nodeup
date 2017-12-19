@@ -141,11 +141,13 @@ func (c *ChefClient) CleanupNode(nodeName string, clientName string) (status boo
 	if c.isClientExist(clientName) {
 		err = c.deleteChefClient(clientName)
 		if err != nil {
+			c.Log().Error(err)
 			status = false
 			return
 		}
 		err = c.deleteChefNode(clientName)
 		if err != nil {
+			c.Log().Error(err)
 			status = false
 			return
 		}

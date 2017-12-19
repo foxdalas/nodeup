@@ -70,6 +70,32 @@ func (o *NodeUP) Init() {
 		o.Log().Fatalf("Chef client error: %s", err)
 	}
 
+	if o.deleteNodes != "" {
+		exit := 0
+		for _, hostname := range strings.Split(o.deleteNodes, ",") {
+			serverID, err := s.IDFromName(hostname)
+			if err != nil {
+				o.Log().Errorf("Can't retrive serverID: %s", err)
+			}
+			err = s.DeleteServer(serverID)
+			if err != nil {
+				o.Log().Errorf("Server %s delete problem openstack", hostname)
+				exit = 1
+			} else {
+				o.Log().Infof("Server %s successfully deleted from openstack", hostname)
+			}
+			_, err = chefClient.CleanupNode(hostname, hostname)
+			if err != nil {
+				o.Log().Errorf("Server %s delete problem chef", hostname)
+				o.Log().Error(err)
+				exit = 1
+			} else {
+				o.Log().Infof("Server %s successfully deleted from chef", hostname)
+			}
+		}
+		os.Exit(exit)
+	}
+
 	var wg sync.WaitGroup
 	for _, hostname := range o.nameGenerator(o.name, o.count) {
 		o.Log().Debugf("Starting goroutine for host %s", hostname)
@@ -207,7 +233,7 @@ func (o *NodeUP) params() error {
 	flag.BoolVar(&o.ignoreFail, "ignoreFail", false, "Don't delete host after fail")
 	flag.IntVar(&o.concurrency, "concurrency", 5, "Concurrency bootstrap")
 	flag.IntVar(&o.prefixCharts, "prefixCharts", 5, "Host mask random prefix")
-	flag.IntVar(&o.sshWaitRetry, "sshWaitRetry", 10, "SSH Retry count")
+	flag.IntVar(&o.sshWaitRetry, "sshWaitRetry", 20, "SSH Retry count")
 	flag.StringVar(&o.chefVersion, "chefVersion", "12.20.3", "chef-client version")
 	flag.StringVar(&o.chefServerUrl, "chefServerUrl", "", "Chef Server URL")
 	flag.StringVar(&o.chefClientName, "chefClientName", "", "Chef client name")
@@ -219,6 +245,8 @@ func (o *NodeUP) params() error {
 	flag.BoolVar(&o.privateNetwork, "privateNetwork", false, "Add Private network")
 
 	flag.BoolVar(&o.jenkinsMode, "jenkinsMode", false, "Jenkins capability mode")
+
+	flag.StringVar(&o.deleteNodes, "deleteNodes", "", "Delete mode. Please use -deleteNodes node_name1, node_name2")
 
 	flag.Parse()
 
@@ -264,23 +292,23 @@ func (o *NodeUP) params() error {
 		}
 	}
 
-	if o.chefRole == "" {
+	if o.chefRole == "" && o.deleteNodes == "" {
 		return errors.New("Please provide -chefRole string")
 	}
 
-	if o.chefEnvironment == "" {
+	if o.chefEnvironment == "" && o.deleteNodes == "" {
 		return errors.New("Please provide -chefEnvironment string")
 	}
 
-	if o.name == "" {
+	if o.name == "" && o.deleteNodes == "" {
 		return errors.New("Please provide -name string")
 	}
 
-	if o.domain == "" {
+	if o.domain == "" && o.deleteNodes == "" {
 		return errors.New("Please provide -domain string")
 	}
 
-	if o.count == 0 {
+	if o.count == 0 && o.deleteNodes == "" {
 		return errors.New("Please provide -count int")
 	}
 
@@ -298,11 +326,11 @@ func (o *NodeUP) params() error {
 		}
 	}
 
-	if o.osFlavorName == "" {
+	if o.osFlavorName == "" && o.deleteNodes == "" {
 		return errors.New("Please provide -flavor string")
 	}
 
-	if o.osKeyName == "" {
+	if o.osKeyName == "" && o.deleteNodes == "" {
 		return errors.New("Please provide -keyname string")
 	}
 
@@ -415,13 +443,14 @@ func sshConnect(address string) error {
 func (o *NodeUP) checkSSHPort(address string) bool {
 	o.Log().Infof("Waiting SSH on host %s", address)
 	time.Sleep(10 * time.Second) //Waiting ssh daemon
-	for i := 0; i < o.sshWaitRetry; i++ {
+	for i := 0; i <= o.sshWaitRetry; i++ {
 		err := sshConnect(address)
 		if err != nil {
 			o.Log().Warnf("Cannot connect to host %s #%d: %s", address, i+1, err.Error())
 		} else {
 			return true
 		}
+		o.Log().Infof("Retries left %d", o.sshWaitRetry-i)
 		time.Sleep(10 * time.Second)
 	}
 	o.Log().Errorf("Can't connect to host %s via ssh", address)
@@ -510,7 +539,7 @@ func (o *NodeUP) runCommands(dir string, version string, environment string) []s
 		"sudo mkdir /etc/chef",
 		"wget -q https://omnitruck.chef.io/install.sh && sudo bash ./install.sh -v " + version + " && rm install.sh",
 		"sudo chmod 0600 " + dir + "/validation.pem",
-		"sudo chef-client -c " + dir + "/client.rb -E" + environment + " -j " + dir + "/bootstrap.json",
+		"sudo chef-client -c " + dir + "/client.rb -E " + environment + " -j " + dir + "/bootstrap.json",
 		"sudo rm " + dir + "/client.rb && sudo rm " + dir + "/validation.pem && rm " + dir + "/bootstrap.json",
 		"sudo chef-client",
 	}
