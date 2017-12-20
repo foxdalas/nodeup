@@ -173,11 +173,14 @@ func (o *Openstack) CreateSever(hostname string, networks string, private bool) 
 		s = append(s, servers.Network{UUID: n})
 	}
 
+	configDrive := true
+
 	serverCreateOpts := servers.CreateOpts{
-		Name:      hostname,
-		FlavorRef: flavorID,
-		ImageRef:  imageID,
-		Networks:  s,
+		Name:        hostname,
+		FlavorRef:   flavorID,
+		ImageRef:    imageID,
+		Networks:    s,
+		ConfigDrive: &configDrive,
 	}
 
 	createOpts := keypairs.CreateOptsExt{
