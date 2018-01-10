@@ -9,16 +9,18 @@ type NodeUP struct {
 	version string
 	log     *log.Entry
 
-	name           string
-	domain         string
-	user           string
-	count          int
-	prefixCharts   int
-	concurrency    int
-	ignoreFail     bool
-	logDir         string
-	defineNetworks string
-	privateNetwork bool
+	name               string
+	domain             string
+	user               string
+	count              int
+	prefixCharts       int
+	concurrency        int
+	ignoreFail         bool
+	logDir             string
+	defineNetworks     string
+	privateNetwork     bool
+	privateNetworkOnly bool
+	gateway            string
 
 	osAuthURL       string
 	osTenantName    string
@@ -28,6 +30,7 @@ type NodeUP struct {
 	osPublicKeyPath string
 	osFlavorName    string
 	osKeyName       string
+	osGroupID       string
 
 	sshWaitRetry int
 
@@ -53,4 +56,8 @@ type NodeUP struct {
 
 	stopCh    chan struct{}
 	waitGroup sync.WaitGroup
+}
+
+type Interfaces struct {
+	Gateway string
 }

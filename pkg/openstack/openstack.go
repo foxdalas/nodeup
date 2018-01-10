@@ -5,8 +5,10 @@ import (
 	"github.com/foxdalas/nodeup/pkg/nodeup_const"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
+	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/hypervisors"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/keypairs"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/networks"
+	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/schedulerhints"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/images"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
@@ -64,7 +66,7 @@ func (o *Openstack) getImageByName() string {
 	return imageID
 }
 
-func (o *Openstack) getNetworks(defineNetworks string, private bool) ([]string, error) {
+func (o *Openstack) getNetworks(defineNetworks string, private bool, privateOnly bool) ([]string, error) {
 	var selectedNetworks []string
 	var networksID []string
 
@@ -78,15 +80,17 @@ func (o *Openstack) getNetworks(defineNetworks string, private bool) ([]string, 
 		o.Log().Errorf("Extract networks: %s", err)
 		return networksID, err
 	}
-	if len(defineNetworks) > 0 {
-		selectedNetworks = strings.Split(defineNetworks, ",")
-	} else {
-		selectedNetworks = append(selectedNetworks, "internet")
-	}
-	for _, net := range allNetworks {
-		for _, selected := range selectedNetworks {
-			if regexp.MustCompile(selected).MatchString(net.Label) {
-				networksID = append(networksID, net.ID)
+	if !privateOnly {
+		if len(defineNetworks) > 0 {
+			selectedNetworks = strings.Split(defineNetworks, ",")
+		} else {
+			selectedNetworks = append(selectedNetworks, "internet")
+		}
+		for _, net := range allNetworks {
+			for _, selected := range selectedNetworks {
+				if regexp.MustCompile(selected).MatchString(net.Label) {
+					networksID = append(networksID, net.ID)
+				}
 			}
 		}
 	}
@@ -98,7 +102,7 @@ func (o *Openstack) getNetworks(defineNetworks string, private bool) ([]string, 
 			}
 		}
 	}
-
+	o.Log().Debugf("NetworkID's: %s", strings.Join(networksID, ","))
 	return networksID, err
 }
 
@@ -150,14 +154,15 @@ func (o *Openstack) createAdminKey() bool {
 	return true
 }
 
-func (o *Openstack) CreateSever(hostname string, networks string, private bool) (*servers.Server, error) {
+func (o *Openstack) CreateSever(hostname string, group string, networks string, private bool, privateOnly bool) (*servers.Server, error) {
+
 	if o.isServerExist(hostname) {
 		o.Log().Fatalf("Server %s already exists", hostname)
 	}
 
 	flavorID := o.getFlavorByName()
 	imageID := o.getImageByName()
-	networksIDs, err := o.getNetworks(networks, private)
+	networksIDs, err := o.getNetworks(networks, private, privateOnly)
 	if err != nil {
 		o.Log().Errorf("Error networks: %s", err)
 		return nil, err
@@ -188,10 +193,25 @@ func (o *Openstack) CreateSever(hostname string, networks string, private bool) 
 		KeyName:           o.keyName,
 	}
 
-	server, err := servers.Create(o.client, createOpts).Extract()
-	if err != nil {
-		o.Log().Errorf("Error: creating server: %s", err)
-		return nil, err
+	var server *servers.Server
+
+	if len(group) > 5 {
+		server, err = servers.Create(o.client, schedulerhints.CreateOptsExt{
+			CreateOptsBuilder: createOpts,
+			SchedulerHints: schedulerhints.SchedulerHints{
+				Group: group,
+			},
+		}).Extract()
+		if err != nil {
+			o.Log().Errorf("Error: creating server: %s", err)
+			return nil, err
+		}
+	} else {
+		server, err = servers.Create(o.client, createOpts).Extract()
+		if err != nil {
+			o.Log().Errorf("Error: creating server: %s", err)
+			return nil, err
+		}
 	}
 
 	info := o.getServer(server.ID)
@@ -234,6 +254,37 @@ func (o *Openstack) CreateSever(hostname string, networks string, private bool) 
 func (o *Openstack) getServer(sid string) *servers.Server {
 	server, _ := servers.Get(o.client, sid).Extract()
 	return server
+}
+
+func (o *Openstack) getHypervisors() ([]hypervisors.Hypervisor, error) {
+	allPages, err := hypervisors.List(o.client).AllPages()
+	if err != nil {
+		o.Log().Error(err)
+		return nil, err
+	}
+
+	allHypervisors, err := hypervisors.ExtractHypervisors(allPages)
+	if err != nil {
+		o.Log().Error(err)
+		return nil, err
+	}
+
+	return allHypervisors, nil
+}
+
+func (o *Openstack) scheduler() {
+	hypervisors, err := o.getHypervisors()
+	if err != nil {
+		o.Log().Fatal(err)
+	}
+
+	for _, hypervisor := range hypervisors {
+		o.Log().Infof("Hypervisor %d information:", hypervisor.ID)
+		o.Log().Infof("vCPU Total %d free vCPU %d", hypervisor.VCPUs, hypervisor.VCPUs-hypervisor.VCPUsUsed)
+		o.Log().Infof("Memory total %d MB free %d MB", hypervisor.MemoryMB, hypervisor.MemoryMB-hypervisor.MemoryMBUsed)
+		o.Log().Infof("Disk free %d GB", hypervisor.FreeDiskGB)
+		o.Log().Info("--------")
+	}
 }
 
 func (o *Openstack) isServerExist(name string) bool {

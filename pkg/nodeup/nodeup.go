@@ -16,10 +16,13 @@ import (
 	"sync"
 	"syscall"
 
+	"bytes"
+	"fmt"
 	"io/ioutil"
 	"net"
 	"os/exec"
 	"os/user"
+	"text/template"
 	"time"
 )
 
@@ -119,7 +122,7 @@ func (o *NodeUP) bootstrapHost(s *openstack.Openstack, c *chef.ChefClient, hostn
 		o.Log().Infof("Processing log %s%s.log", o.jenkinsLogURL, hostname)
 	}
 
-	oHost, err := s.CreateSever(hostname, o.defineNetworks, o.privateNetwork)
+	oHost, err := s.CreateSever(hostname, o.osGroupID, o.defineNetworks, o.privateNetwork, o.privateNetworkOnly)
 	if err != nil {
 		return false
 	}
@@ -131,7 +134,9 @@ func (o *NodeUP) bootstrapHost(s *openstack.Openstack, c *chef.ChefClient, hostn
 	}
 
 	var availableAddresses []string
-	for _, ip := range o.getPublicAddress(oHost.Addresses) {
+	ipAddresses := o.getAddress(oHost.Addresses, o.privateNetworkOnly)
+	o.Log().Debugf("Ip Addresses for host %s: %s", hostname, strings.Join(ipAddresses, ","))
+	for _, ip := range ipAddresses {
 
 		if o.checkSSHPort(ip) {
 			o.Log().Debugf("SSH is accessible on host %s", hostname)
@@ -166,6 +171,19 @@ func (o *NodeUP) bootstrapHost(s *openstack.Openstack, c *chef.ChefClient, hostn
 			err = sshClient.TransferFile(fileData, fileName, o.sshUploadDir)
 			if o.assertBootstrap(s, c, oHost.ID, hostname, err) {
 				return false
+			}
+		}
+
+		if o.privateNetworkOnly {
+			err = sshClient.TransferFile(o.createInterfacesFile(o.gateway), "interfaces", o.sshUploadDir)
+			if o.assertBootstrap(s, c, oHost.ID, hostname, err) {
+				return false
+			}
+			for _, command := range o.configureDefaultGateway() {
+				err = sshClient.RunCommandPipe(command, outFile)
+				if o.assertBootstrap(s, c, oHost.ID, hostname, err) {
+					return false
+				}
 			}
 		}
 
@@ -225,6 +243,7 @@ func (o *NodeUP) params() error {
 	flag.StringVar(&o.logDir, "logDir", "logs", "Logs directory")
 	flag.IntVar(&o.count, "count", 1, "Deployment hosts count")
 	flag.StringVar(&o.osFlavorName, "flavor", "", "Openstack flavor name")
+	flag.StringVar(&o.osGroupID, "group", "", "Openstack groupID")
 	flag.StringVar(&o.chefEnvironment, "chefEnvironment", "", "Environment name for host")
 	flag.StringVar(&o.chefRole, "chefRole", "", "Role name for host")
 	flag.StringVar(&o.osKeyName, "keyName", usr.Username, "Openstack admin key name")
@@ -243,12 +262,15 @@ func (o *NodeUP) params() error {
 	flag.StringVar(&o.sshUploadDir, "sshUploadDir", "/home/"+o.sshUser, "SSH Upload directory")
 	flag.StringVar(&o.defineNetworks, "networks", "", "Define networks like 8.8.8.0/24, 10.0.0.0/24")
 	flag.BoolVar(&o.privateNetwork, "privateNetwork", false, "Add Private network")
+	flag.BoolVar(&o.privateNetworkOnly, "privateNetworkOnly", false, "Add Private network without public")
 
 	flag.BoolVar(&o.jenkinsMode, "jenkinsMode", false, "Jenkins capability mode")
 
 	flag.StringVar(&o.deleteNodes, "deleteNodes", "", "Delete mode. Please use -deleteNodes node_name1, node_name2")
 
 	flag.Parse()
+
+	o.gateway = os.Getenv("GATEWAY")
 
 	if o.chefValidationPath == "" && len(os.Getenv("CHEF_VALIDATION_PEM")) == 0 {
 		return errors.New("Please provide -chefValidationPath or environment variable CHEF_VALIDATION_PEM")
@@ -412,22 +434,38 @@ func (o *NodeUP) nameGenerator(prefix string, count int) []string {
 	return result
 }
 
-func (o *NodeUP) getPublicAddress(addresses map[string]interface{}) []string {
+func (o *NodeUP) getAddress(addresses map[string]interface{}, usePrivate bool) []string {
 	var result []string
 
-	//TODO: Please fix this shit
-	for _, networks := range addresses {
-		for _, addrs := range networks.([]interface{}) {
-			ip := addrs.(map[string]interface{})["addr"].(string)
-			isPrivate, err := privateIP(ip)
-			if err != nil {
-				o.Log().Error(err)
+	if !usePrivate {
+		//TODO: Please fix this shit
+		for _, networks := range addresses {
+			for _, addrs := range networks.([]interface{}) {
+				ip := addrs.(map[string]interface{})["addr"].(string)
+				isPrivate, err := privateIP(ip)
+				if err != nil {
+					o.Log().Error(err)
+				}
+				if !isPrivate {
+					result = append(result, ip)
+				}
 			}
-			if !isPrivate {
-				result = append(result, ip)
+		}
+	} else {
+		for _, networks := range addresses {
+			for _, addrs := range networks.([]interface{}) {
+				ip := addrs.(map[string]interface{})["addr"].(string)
+				isPrivate, err := privateIP(ip)
+				if err != nil {
+					o.Log().Error(err)
+				}
+				if isPrivate {
+					result = append(result, ip)
+				}
 			}
 		}
 	}
+
 	return result
 }
 
@@ -522,6 +560,14 @@ func (o *NodeUP) deleteHost(openstack *openstack.Openstack, chefClient *chef.Che
 	}
 }
 
+func (o *NodeUP) configureDefaultGateway() []string {
+	data := []string{
+		"sudo mv interfaces /etc/network/",
+		fmt.Sprintf("sudo route add default gw %s", o.gateway),
+	}
+	return data
+}
+
 func (o *NodeUP) transferFiles(chef *chef.Chef) map[string][]byte {
 	data := make(map[string][]byte)
 	data["bootstrap.json"] = chef.BootstrapJson
@@ -569,4 +615,36 @@ func privateIP(ip string) (bool, error) {
 		private = private24BitBlock.Contains(IP) || private20BitBlock.Contains(IP) || private16BitBlock.Contains(IP)
 	}
 	return private, err
+}
+
+func (o *NodeUP) createInterfacesFile(gateway string) []byte {
+	interfaces := &Interfaces{
+		Gateway: gateway,
+	}
+
+	var buf bytes.Buffer
+	t := template.New("interfaces")
+	t, err := t.Parse(`
+auto lo
+iface lo inet loopback
+
+allow-hotplug ens3
+iface ens3 inet dhcp
+  post-up route add default gw {{ .Gateway }}
+
+allow-hotplug ens4
+iface ens4 inet dhcp
+
+allow-hotplug ens5
+iface ens5 inet dhcp
+
+source /etc/network/interfaces.d/*`)
+	if err != nil {
+		o.Log().Fatal(err)
+	}
+	err = t.Execute(&buf, interfaces)
+	if err != nil {
+		o.Log().Fatal(err)
+	}
+	return buf.Bytes()
 }
