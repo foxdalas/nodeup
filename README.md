@@ -85,7 +85,7 @@ docker run --net=host --name $JOB_NAME-$BUILD_NUMBER --rm \
     -e CHEF_APIKEY=/chef.pem \
     -v $CHEF_APIKEY:/chef.pem \
     -v $CHEF_VALIDATION_PEM:/validation.pem \
-    foxdalas/nodeup:latest -name $Name -domain hosts.twiket.com -chefEnvironment $Environment -chefRole $Role -flavor $Flavor -count $Count -chefKeyPath  /chef.pem -chefValidationPath /validation.pem -jenkinsMode
+    foxdalas/nodeup:latest -name $Name -domain example.com -chefEnvironment $Environment -chefRole $Role -flavor $Flavor -count $Count -chefKeyPath  /chef.pem -chefValidationPath /validation.pem -jenkinsMode
 ```
 
 #### Example

@@ -122,7 +122,7 @@ func (o *NodeUP) bootstrapHost(s *openstack.Openstack, c *chef.ChefClient, hostn
 		o.Log().Infof("Processing log %s%s.log", o.jenkinsLogURL, hostname)
 	}
 
-	oHost, err := s.CreateSever(hostname, o.osGroupID, o.defineNetworks, o.privateNetwork, o.privateNetworkOnly)
+	oHost, err := s.CreateSever(hostname, o.osGroupID, o.defineNetworks)
 	if err != nil {
 		return false
 	}
@@ -134,7 +134,8 @@ func (o *NodeUP) bootstrapHost(s *openstack.Openstack, c *chef.ChefClient, hostn
 	}
 
 	var availableAddresses []string
-	ipAddresses := o.getAddress(oHost.Addresses, o.privateNetworkOnly)
+
+	ipAddresses := o.getAddress(oHost.Addresses)
 	o.Log().Debugf("Ip Addresses for host %s: %s", hostname, strings.Join(ipAddresses, ","))
 	for _, ip := range ipAddresses {
 
@@ -174,7 +175,7 @@ func (o *NodeUP) bootstrapHost(s *openstack.Openstack, c *chef.ChefClient, hostn
 			}
 		}
 
-		if o.privateNetworkOnly {
+		if o.usePrivateNetwork {
 			err = sshClient.TransferFile(o.createInterfacesFile(o.gateway), "interfaces", o.sshUploadDir)
 			if o.assertBootstrap(s, c, oHost.ID, hostname, err) {
 				return false
@@ -260,9 +261,7 @@ func (o *NodeUP) params() error {
 	flag.StringVar(&o.chefValidationPath, "chefValidationPath", "", "Validation key path or CHEF_VALIDATION_PEM")
 	flag.StringVar(&o.sshUser, "sshUser", "cloud-user", "SSH Username")
 	flag.StringVar(&o.sshUploadDir, "sshUploadDir", "/home/"+o.sshUser, "SSH Upload directory")
-	flag.StringVar(&o.defineNetworks, "networks", "", "Define networks like 8.8.8.0/24, 10.0.0.0/24")
-	flag.BoolVar(&o.privateNetwork, "privateNetwork", false, "Add Private network")
-	flag.BoolVar(&o.privateNetworkOnly, "privateNetworkOnly", false, "Add Private network without public")
+	flag.StringVar(&o.defineNetworks, "networks", "", "Define networks like internet_XX.XX.XX.XX/XX,local_private,global_private")
 
 	flag.BoolVar(&o.jenkinsMode, "jenkinsMode", false, "Jenkins capability mode")
 
@@ -434,39 +433,32 @@ func (o *NodeUP) nameGenerator(prefix string, count int) []string {
 	return result
 }
 
-func (o *NodeUP) getAddress(addresses map[string]interface{}, usePrivate bool) []string {
-	var result []string
+func (o *NodeUP) getAddress(addresses map[string]interface{}) []string {
+	var public []string
+	var private []string
 
-	if !usePrivate {
-		//TODO: Please fix this shit
-		for _, networks := range addresses {
-			for _, addrs := range networks.([]interface{}) {
-				ip := addrs.(map[string]interface{})["addr"].(string)
-				isPrivate, err := privateIP(ip)
-				if err != nil {
-					o.Log().Error(err)
-				}
-				if !isPrivate {
-					result = append(result, ip)
-				}
+	for _, networks := range addresses {
+		for _, addrs := range networks.([]interface{}) {
+			ip := addrs.(map[string]interface{})["addr"].(string)
+
+			if o.publicIP(ip) {
+				o.Log().Debugf("IP %s is public", ip)
+				public = append(public, ip)
 			}
-		}
-	} else {
-		for _, networks := range addresses {
-			for _, addrs := range networks.([]interface{}) {
-				ip := addrs.(map[string]interface{})["addr"].(string)
-				isPrivate, err := privateIP(ip)
-				if err != nil {
-					o.Log().Error(err)
-				}
-				if isPrivate {
-					result = append(result, ip)
-				}
+			if o.privateIP(ip) {
+				o.Log().Debugf("IP %s is private", ip)
+				private = append(private, ip)
 			}
 		}
 	}
 
-	return result
+	if len(public) > 0 {
+		o.Log().Debugf("Found public ip's: %s", public)
+		return public
+	} else {
+		o.usePrivateNetwork = true
+		return private
+	}
 }
 
 func sshConnect(address string) error {
@@ -602,19 +594,39 @@ func contains(slice []string, item string) bool {
 	return ok
 }
 
-func privateIP(ip string) (bool, error) {
-	var err error
+func (o *NodeUP) privateIP(ip string) bool {
 	private := false
 	IP := net.ParseIP(ip)
 	if IP == nil {
-		err = errors.New("Invalid IP")
+		o.Log().Error("Invalid IP")
 	} else {
-		_, private24BitBlock, _ := net.ParseCIDR("10.0.0.0/8")
+		//_, private24BitBlock, _ := net.ParseCIDR("10.0.0.0/8") // this block for Global Private Network.
 		_, private20BitBlock, _ := net.ParseCIDR("172.16.0.0/12")
 		_, private16BitBlock, _ := net.ParseCIDR("192.168.0.0/16")
-		private = private24BitBlock.Contains(IP) || private20BitBlock.Contains(IP) || private16BitBlock.Contains(IP)
+		private = private20BitBlock.Contains(IP) || private16BitBlock.Contains(IP)
 	}
-	return private, err
+
+	return private
+}
+
+func (o *NodeUP) publicIP(ip string) bool {
+	IP := net.ParseIP(ip)
+	if IP.IsLoopback() || IP.IsLinkLocalMulticast() || IP.IsLinkLocalUnicast() {
+		return false
+	}
+	if ip4 := IP.To4(); ip4 != nil {
+		switch true {
+		case ip4[0] == 10:
+			return false
+		case ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31:
+			return false
+		case ip4[0] == 192 && ip4[1] == 168:
+			return false
+		default:
+			return true
+		}
+	}
+	return false
 }
 
 func (o *NodeUP) createInterfacesFile(gateway string) []byte {

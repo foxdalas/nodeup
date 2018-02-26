@@ -14,7 +14,6 @@ import (
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
 	"github.com/sirupsen/logrus"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 )
@@ -66,8 +65,12 @@ func (o *Openstack) getImageByName() string {
 	return imageID
 }
 
-func (o *Openstack) getNetworks(defineNetworks string, private bool, privateOnly bool) ([]string, error) {
-	var selectedNetworks []string
+func (o *Openstack) getNetworkIDs(defineNetworks string) ([]string, error) {
+	//Servers.com networking labels
+	//External - internet_XX.XX.XX.XX/XX
+	//Internal - local_private
+	//Global Internal - global_private
+
 	var networksID []string
 
 	allPages, err := networks.List(o.client).AllPages()
@@ -80,29 +83,18 @@ func (o *Openstack) getNetworks(defineNetworks string, private bool, privateOnly
 		o.Log().Errorf("Extract networks: %s", err)
 		return networksID, err
 	}
-	if !privateOnly {
-		if len(defineNetworks) > 0 {
-			selectedNetworks = strings.Split(defineNetworks, ",")
-		} else {
-			selectedNetworks = append(selectedNetworks, "internet")
-		}
+	if len(defineNetworks) > 0 {
 		for _, net := range allNetworks {
-			for _, selected := range selectedNetworks {
-				if regexp.MustCompile(selected).MatchString(net.Label) {
+			for _, selected := range strings.Split(defineNetworks, ",") {
+				if selected == net.Label {
 					networksID = append(networksID, net.ID)
 				}
 			}
 		}
+	} else {
+		o.Log().Error("Please provide networks")
+		return networksID, errors.New("Networks list not found")
 	}
-
-	if private {
-		for _, net := range allNetworks {
-			if net.Label == "local_private" {
-				networksID = append(networksID, net.ID)
-			}
-		}
-	}
-	o.Log().Debugf("NetworkID's: %s", strings.Join(networksID, ","))
 	return networksID, err
 }
 
@@ -154,7 +146,7 @@ func (o *Openstack) createAdminKey() bool {
 	return true
 }
 
-func (o *Openstack) CreateSever(hostname string, group string, networks string, private bool, privateOnly bool) (*servers.Server, error) {
+func (o *Openstack) CreateSever(hostname string, group string, networks string) (*servers.Server, error) {
 
 	if o.isServerExist(hostname) {
 		o.Log().Fatalf("Server %s already exists", hostname)
@@ -162,7 +154,7 @@ func (o *Openstack) CreateSever(hostname string, group string, networks string, 
 
 	flavorID := o.getFlavorByName()
 	imageID := o.getImageByName()
-	networksIDs, err := o.getNetworks(networks, private, privateOnly)
+	networksIDs, err := o.getNetworkIDs(networks)
 	if err != nil {
 		o.Log().Errorf("Error networks: %s", err)
 		return nil, err

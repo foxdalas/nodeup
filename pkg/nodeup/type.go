@@ -9,18 +9,17 @@ type NodeUP struct {
 	version string
 	log     *log.Entry
 
-	name               string
-	domain             string
-	user               string
-	count              int
-	prefixCharts       int
-	concurrency        int
-	ignoreFail         bool
-	logDir             string
-	defineNetworks     string
-	privateNetwork     bool
-	privateNetworkOnly bool
-	gateway            string
+	name              string
+	domain            string
+	user              string
+	count             int
+	prefixCharts      int
+	concurrency       int
+	ignoreFail        bool
+	logDir            string
+	defineNetworks    string
+	usePrivateNetwork bool
+	gateway           string
 
 	osAuthURL       string
 	osTenantName    string
