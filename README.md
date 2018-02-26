@@ -38,10 +38,14 @@ Usage of ./nodeup:
     	Concurrency bootstrap (default 5)
   -count int
     	Deployment hosts count (default 1)
+  -deleteNodes string
+    	Delete mode. Please use -deleteNodes node_name1, node_name2
   -domain string
     	Domain name like hosts.example.com
   -flavor string
     	Openstack flavor name
+  -group string
+    	Openstack groupID
   -ignoreFail
     	Don't delete host after fail
   -jenkinsMode
@@ -52,6 +56,8 @@ Usage of ./nodeup:
     	Logs directory (default "logs")
   -name string
     	Hostname or  mask like role-environment-* or full-hostname-name if -count 1
+  -networks string
+    	Define networks like internet_XX.XX.XX.XX/XX,local_private,global_private
   -prefixCharts int
     	Host mask random prefix (default 5)
   -publicKeyPath string
@@ -61,7 +67,7 @@ Usage of ./nodeup:
   -sshUser string
     	SSH Username (default "cloud-user")
   -sshWaitRetry int
-    	SSH Retry count (default 10)
+    	SSH Retry count (default 20)
   -user string
     	Openstack user (default "cloud-user")
 ```
