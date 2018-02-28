@@ -9,6 +9,7 @@ import (
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/keypairs"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/networks"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/schedulerhints"
+	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/startstop"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/images"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
@@ -206,14 +207,20 @@ func (o *Openstack) CreateSever(hostname string, group string, networks string) 
 		}
 	}
 
-	info := o.getServer(server.ID)
+	info, err := o.GetServer(server.ID)
+	if err != nil {
+		o.Log().Error(err)
+	}
 
 	o.Log().Debugf("Waiting server %s up", info.Name)
 	i := 0
 	status := ""
 	for {
 		time.Sleep(5 * time.Second) //Waiting 5 second before retry getting openstack host status
-		info = o.getServer(server.ID)
+		info, err = o.GetServer(server.ID)
+		if err != nil {
+			o.Log().Error(err)
+		}
 
 		if info.Status == status {
 			i++
@@ -243,12 +250,16 @@ func (o *Openstack) CreateSever(hostname string, group string, networks string) 
 	return info, nil
 }
 
-func (o *Openstack) getServer(sid string) *servers.Server {
-	server, _ := servers.Get(o.client, sid).Extract()
-	return server
+func (o *Openstack) GetServer(sid string) (*servers.Server, error) {
+	server, err := servers.Get(o.client, sid).Extract()
+	if err != nil {
+		o.Log().Error(err)
+		return nil, err
+	}
+	return server, nil
 }
 
-func (o *Openstack) getHypervisors() ([]hypervisors.Hypervisor, error) {
+func (o *Openstack) GetHypervisors() ([]hypervisors.Hypervisor, error) {
 	allPages, err := hypervisors.List(o.client).AllPages()
 	if err != nil {
 		o.Log().Error(err)
@@ -260,12 +271,81 @@ func (o *Openstack) getHypervisors() ([]hypervisors.Hypervisor, error) {
 		o.Log().Error(err)
 		return nil, err
 	}
-
 	return allHypervisors, nil
 }
 
+func (o *Openstack) GetHypervisorInfo(id int) (*hypervisors.Hypervisor, error) {
+	hypervisor, err := hypervisors.Get(o.client, id).Extract()
+	if err != nil {
+		o.Log().Error(err)
+		return nil, err
+	}
+
+	return hypervisor, nil
+}
+
+func (o *Openstack) GetHypervisorStatistics(id int) (*hypervisors.Statistics, error) {
+	hypervisorsStatistics, err := hypervisors.GetStatistics(o.client).Extract()
+	if err != nil {
+		o.Log().Error(err)
+		return nil, err
+	}
+	return hypervisorsStatistics, nil
+}
+
+func (o *Openstack) GetServers() ([]servers.Server, error) {
+	opts := servers.ListOpts{}
+	allPages, err := servers.List(o.client, opts).AllPages()
+	if err != nil {
+		o.Log().Error(err)
+		return nil, err
+	}
+	allServers, err := servers.ExtractServers(allPages)
+	if err != nil {
+		o.Log().Error(err)
+		return nil, err
+	}
+	return allServers, nil
+}
+
+func (o *Openstack) GetFlavors() ([]flavors.Flavor, error) {
+	listOpts := flavors.ListOpts{
+		AccessType: flavors.PrivateAccess,
+	}
+	allPages, err := flavors.ListDetail(o.client, listOpts).AllPages()
+	if err != nil {
+		panic(err)
+	}
+
+	allFlavors, err := flavors.ExtractFlavors(allPages)
+	if err != nil {
+		o.Log().Error(err)
+		return nil, err
+	}
+
+	return allFlavors, nil
+}
+
+func (o *Openstack) GetFlavorInfo(id string) (*flavors.Flavor, error) {
+	flavor, err := flavors.Get(o.client, id).Extract()
+	if err != nil {
+		o.Log().Error(err)
+		return nil, err
+	}
+
+	return flavor, nil
+}
+
+func (o *Openstack) StartServer(id string) error {
+	return startstop.Start(o.client, id).ExtractErr()
+}
+
+func (o *Openstack) StopServer(id string) error {
+	return startstop.Stop(o.client, id).ExtractErr()
+}
+
 func (o *Openstack) scheduler() {
-	hypervisors, err := o.getHypervisors()
+	hypervisors, err := o.GetHypervisors()
 	if err != nil {
 		o.Log().Fatal(err)
 	}

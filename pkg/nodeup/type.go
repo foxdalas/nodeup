@@ -1,60 +1,69 @@
 package nodeup
 
 import (
+	"github.com/foxdalas/nodeup/pkg/chef"
+	"github.com/foxdalas/nodeup/pkg/openstack"
 	log "github.com/sirupsen/logrus"
 	"sync"
 )
 
 type NodeUP struct {
-	version string
-	log     *log.Entry
+	Ver     string
+	Logging *log.Entry
 
-	name              string
-	domain            string
-	user              string
-	count             int
-	prefixCharts      int
-	concurrency       int
-	ignoreFail        bool
-	logDir            string
-	defineNetworks    string
-	usePrivateNetwork bool
-	gateway           string
+	Openstack *openstack.Openstack
+	Chef      *chef.ChefClient
 
-	osAuthURL       string
-	osTenantName    string
-	osPassword      string
-	osUsername      string
-	osPublicKey     string
-	osPublicKeyPath string
-	osFlavorName    string
-	osKeyName       string
-	osGroupID       string
+	Name              string
+	Domain            string
+	User              string
+	Count             int
+	PrefixCharts      int
+	Concurrency       int
+	IgnoreFail        bool
+	LogDir            string
+	DefineNetworks    string
+	UsePrivateNetwork bool
+	Gateway           string
 
-	sshWaitRetry int
+	OSAuthURL       string
+	OSTenantName    string
+	OSPassword      string
+	OSUsername      string
+	OSPublicKey     string
+	OSPublicKeyPath string
+	OSFlavorName    string
+	OSKeyName       string
+	OSGroupID       string
 
-	chefVersion        string
-	chefServerUrl      string
-	chefClientName     string
-	chefKeyPath        string
-	chefKeyPem         []byte
-	chefValidationPath string
-	chefValidationPem  []byte
-	chefEnvironment    string
-	chefRole           string
+	SSHWaitRetry int
 
-	jenkinsMode   bool
-	jenkinsLogURL string
+	ChefVersion        string
+	ChefServerUrl      string
+	ChefClientName     string
+	ChefKeyPath        string
+	ChefKeyPem         []byte
+	ChefValidationPath string
+	ChefValidationPem  []byte
+	ChefEnvironment    string
+	ChefRole           string
 
-	sshUser      string
-	sshUploadDir string
+	JenkinsMode   bool
+	JenkinsLogURL string
 
-	deleteNodes string
+	SSHUser      string
+	SSHUploadDir string
 
-	exitcode int
+	DeleteNodes string
 
-	stopCh    chan struct{}
-	waitGroup sync.WaitGroup
+	Exitcode int
+
+	Daemon bool
+
+	WebSSHUser string
+
+	StopCh    chan struct{}
+	WaitGroup sync.WaitGroup
 }
 
 type Interfaces struct {

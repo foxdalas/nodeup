@@ -1,10 +1,10 @@
 package main
 
 import (
-	"github.com/foxdalas/nodeup/pkg/nodeup"
+	"github.com/foxdalas/nodeup/pkg/cmd"
 )
 
-var AppVersion = "0.0.2"
+var AppVersion = "0.0.3"
 var AppGitCommit = ""
 var AppGitState = ""
 
@@ -22,6 +22,5 @@ func Version() string {
 }
 
 func main() {
-	o := nodeup.New(Version())
-	o.Init()
+	cmd.Run(Version())
 }
