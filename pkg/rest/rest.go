@@ -73,11 +73,17 @@ func setupHost(c echo.Context) error {
 
 // Get Hypervisors list
 func (e *Echo) getHypervisors(c echo.Context) error {
-	hypervisors, err := e.nodeup.Openstack.GetHypervisors()
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, e.simpleMessage("", "Can't get hypervisors list"))
+	cache, found := e.cache.Get("hypervisors")
+	if found {
+		return c.JSON(http.StatusOK, cache)
+	} else {
+		hypervisors, err := e.nodeup.Openstack.GetHypervisors()
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, e.simpleMessage("", "Can't get hypervisors list"))
+		}
+		e.cache.Set("hypervisors", hypervisors, 1*time.Minute)
+		return c.JSON(http.StatusOK, hypervisors)
 	}
-	return c.JSON(http.StatusOK, hypervisors)
 }
 
 // Get Hypervisor Information

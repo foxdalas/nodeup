@@ -181,7 +181,7 @@ func params(o *nodeup.NodeUP) error {
 	}
 
 	if o.OSPublicKeyPath == "" && len(os.Getenv("OS_PUBLIC_KEY")) == 0 {
-		return errors.New("Please provide -keyPath or environment variable OS_PUBLIC_KEY")
+		return errors.New("Please provide -publicKeyPath or environment variable OS_PUBLIC_KEY")
 	} else {
 		if o.OSPublicKeyPath != "" {
 			dat, err := ioutil.ReadFile(o.OSPublicKeyPath)
