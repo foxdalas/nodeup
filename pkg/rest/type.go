@@ -39,6 +39,8 @@ type SimpleResponse struct {
 }
 
 type HypervisorName struct {
-	HostID string `json:"hostid" xml:"hostid" form:"hostid" query:"hostid"`
-	Name   string `json:"name" xml:"name" form:"name" query:"name"`
+	HostID             string `json:"hostid" xml:"hostid" form:"hostid" query:"hostid"`
+	Name               string `json:"name" xml:"name" form:"name" query:"name"`
+	Hypervisor         string `json:"hypervisor"`
+	HypervisorHostname string `json:"hypervisor_hostname"`
 }

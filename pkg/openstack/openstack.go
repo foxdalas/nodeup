@@ -1,6 +1,7 @@
 package openstack
 
 import (
+	"encoding/json"
 	"errors"
 	"github.com/foxdalas/nodeup/pkg/nodeup_const"
 	"github.com/gophercloud/gophercloud"
@@ -13,12 +14,12 @@ import (
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/images"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
+	"github.com/patrickmn/go-cache"
 	"github.com/sirupsen/logrus"
 	"os"
+	"sort"
 	"strings"
 	"time"
-
-	"sort"
 )
 
 func New(nodeup nodeup.NodeUP, key string, keyName string, flavor string) *Openstack {
@@ -28,6 +29,7 @@ func New(nodeup nodeup.NodeUP, key string, keyName string, flavor string) *Opens
 		flavorName: flavor,
 		key:        key,
 		keyName:    keyName,
+		cache:      cache.New(5*time.Minute, 10*time.Minute),
 	}
 
 	var err error
@@ -262,13 +264,23 @@ func (o *Openstack) GetServer(sid string) (*servers.Server, error) {
 	return server, nil
 }
 
+func (o *Openstack) GetServerDetail(sid string) (Server, error) {
+	var server Server
+	err := servers.Get(o.client, sid).ExtractInto(&server)
+	o.Log().Info(servers.Get(o.client, sid).PrettyPrintJSON())
+	if err != nil {
+		o.Log().Error(err)
+		return server, err
+	}
+	return server, nil
+}
+
 func (o *Openstack) GetHypervisors() ([]hypervisors.Hypervisor, error) {
 	allPages, err := hypervisors.List(o.client).AllPages()
 	if err != nil {
 		o.Log().Error(err)
 		return nil, err
 	}
-
 	allHypervisors, err := hypervisors.ExtractHypervisors(allPages)
 	if err != nil {
 		o.Log().Error(err)
@@ -419,8 +431,44 @@ func (o *Openstack) DeleteIfError(id string, err error) bool {
 }
 
 func (o *Openstack) IDFromName(hostname string) (string, error) {
-	id, err := servers.IDFromName(o.client, hostname)
-	return id, err
+	count := 0
+	id := ""
+	var servers []servers.Server
+	var err error
+
+	cache, found := o.cache.Get("servers")
+	if found {
+		err = json.Unmarshal(cache.([]byte), &servers)
+		if err != nil {
+			return "", err
+		}
+	} else {
+		servers, err = o.GetServers()
+		if err != nil {
+			return "", err
+		}
+		json, err := json.Marshal(servers)
+		if err != nil {
+			return "", err
+		}
+		o.cache.Set("servers", json, 10*time.Minute)
+	}
+
+	for _, f := range servers {
+		if f.Name == hostname {
+			count++
+			id = f.ID
+		}
+	}
+
+	switch count {
+	case 0:
+		return "", gophercloud.ErrResourceNotFound{Name: hostname, ResourceType: "server"}
+	case 1:
+		return id, nil
+	default:
+		return "", gophercloud.ErrMultipleResourcesFound{Name: hostname, Count: count, ResourceType: "server"}
+	}
 }
 
 func (c sortedHypervisorsByvCPU) Len() int           { return len(c) }
