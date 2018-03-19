@@ -85,6 +85,7 @@ func params(o *nodeup.NodeUP) error {
 
 	flag.StringVar(&o.Name, "name", "", "Hostname or  mask like role-environment-* or full-hostname-name if -count 1")
 	flag.StringVar(&o.Domain, "domain", "", "Domain name like hosts.example.com")
+	flag.StringVar(&o.AvailabilityZone, "availability-zone", "", "Select availability-zone.")
 	flag.StringVar(&o.LogDir, "logDir", "logs", "Logs directory")
 	flag.IntVar(&o.Count, "count", 1, "Deployment hosts count")
 	flag.StringVar(&o.OSFlavorName, "flavor", "", "Openstack flavor name")
@@ -224,6 +225,11 @@ func params(o *nodeup.NodeUP) error {
 	o.OSPassword = os.Getenv("OS_PASSWORD")
 	if len(o.OSPassword) == 0 {
 		return errors.New("Please provide OS_PASSWORD")
+	}
+
+	o.OSProjectID = os.Getenv("OS_PROJECT_ID")
+	if len(o.OSProjectID) == 0 && o.Daemon {
+		return errors.New("Please provide OS_PROJECT_ID")
 	}
 
 	if o.JenkinsMode {

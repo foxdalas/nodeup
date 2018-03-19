@@ -29,6 +29,8 @@ func Init(n *nodeup.NodeUP) *Echo {
 	e.GET("/api/hypervisors", e.getHypervisors)
 	e.GET("/api/hypervisors/:id", e.getHypervisorInfo)
 	e.GET("/api/hypervisors/:id/statistics", e.getHypervisorStatistics)
+	e.GET("/api/hypervisors/sort/:criteria", e.getSortedHypervisorsByCriteria)
+	e.GET("/api/hypervisors/free/:criteria", e.getHypervisorByCriteria)
 
 	// Servers (read VM) methods
 	e.GET("/api/servers", e.getServers)
@@ -37,6 +39,7 @@ func Init(n *nodeup.NodeUP) *Echo {
 	e.POST("/api/servers/:id/stop", e.stopServer)
 	e.POST("/api/servers/:id/chef", e.serverChefRun)
 	e.GET("/api/servers/:id/action", e.serverActionStatus)
+	e.GET("/api/servers/:name/hypervisor", e.serverGetHypervisorName)
 
 	// Flavors methods
 	e.GET("/api/flavors", e.getFlavors)
@@ -105,6 +108,21 @@ func (e *Echo) getHypervisorStatistics(c echo.Context) error {
 	return c.JSON(http.StatusOK, hypervisorStatistics)
 }
 
+// Sort Hypervisors by vCPU
+func (e *Echo) getSortedHypervisorsByCriteria(c echo.Context) error {
+	return c.JSON(http.StatusOK, e.nodeup.Openstack.HypervisorScheduler(c.Param("criteria")))
+}
+
+// Sort Hypervisors by Memory
+func (e *Echo) getSortedHypervisorsByMemory(c echo.Context) error {
+	return c.JSON(http.StatusOK, e.nodeup.Openstack.HypervisorScheduler("memory"))
+
+}
+
+func (e *Echo) getHypervisorByCriteria(c echo.Context) error {
+	return c.JSON(http.StatusOK, e.nodeup.Openstack.GetHypervisorWithSensitiveCriteria(c.Param("criteria")))
+}
+
 // Get Servers (VM) List
 func (e *Echo) getServers(c echo.Context) error {
 	servers, err := e.nodeup.Openstack.GetServers()
@@ -155,6 +173,26 @@ func (e *Echo) stopServer(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, e.simpleMessage("", err.Error()))
 	}
 	return c.JSON(http.StatusOK, "ok")
+}
+
+// Servers (VM) Get Hypervisor name
+func (e *Echo) serverGetHypervisorName(c echo.Context) error {
+	id, err := e.nodeup.Openstack.IDFromName(c.Param("name"))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, e.simpleMessage("", err.Error()))
+	}
+
+	serverInfo, err := e.nodeup.Openstack.GetServer(id)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, e.simpleMessage("", err.Error()))
+	}
+
+	data := &HypervisorName{
+		serverInfo.HostID,
+		serverInfo.HostID,
+	}
+
+	return c.JSON(http.StatusOK, data)
 }
 
 // Server Action status

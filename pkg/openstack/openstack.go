@@ -17,6 +17,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"sort"
 )
 
 func New(nodeup nodeup.NodeUP, key string, keyName string, flavor string) *Openstack {
@@ -147,7 +149,7 @@ func (o *Openstack) createAdminKey() bool {
 	return true
 }
 
-func (o *Openstack) CreateSever(hostname string, group string, networks string) (*servers.Server, error) {
+func (o *Openstack) CreateSever(hostname string, group string, networks string, availabilityZone string) (*servers.Server, error) {
 
 	if o.isServerExist(hostname) {
 		o.Log().Fatalf("Server %s already exists", hostname)
@@ -174,11 +176,12 @@ func (o *Openstack) CreateSever(hostname string, group string, networks string) 
 	configDrive := true
 
 	serverCreateOpts := servers.CreateOpts{
-		Name:        hostname,
-		FlavorRef:   flavorID,
-		ImageRef:    imageID,
-		Networks:    s,
-		ConfigDrive: &configDrive,
+		Name:             hostname,
+		FlavorRef:        flavorID,
+		ImageRef:         imageID,
+		Networks:         s,
+		ConfigDrive:      &configDrive,
+		AvailabilityZone: availabilityZone,
 	}
 
 	createOpts := keypairs.CreateOptsExt{
@@ -344,19 +347,35 @@ func (o *Openstack) StopServer(id string) error {
 	return startstop.Stop(o.client, id).ExtractErr()
 }
 
-func (o *Openstack) scheduler() {
+// Criteria
+// cpu - CPU Sensitive
+// memory - Memory Sensitive by Free RAM metric
+func (o *Openstack) HypervisorScheduler(criteria string) []hypervisors.Hypervisor {
+
 	hypervisors, err := o.GetHypervisors()
 	if err != nil {
 		o.Log().Fatal(err)
 	}
-
-	for _, hypervisor := range hypervisors {
-		o.Log().Infof("Hypervisor %d information:", hypervisor.ID)
-		o.Log().Infof("vCPU Total %d free vCPU %d", hypervisor.VCPUs, hypervisor.VCPUs-hypervisor.VCPUsUsed)
-		o.Log().Infof("Memory total %d MB free %d MB", hypervisor.MemoryMB, hypervisor.MemoryMB-hypervisor.MemoryMBUsed)
-		o.Log().Infof("Disk free %d GB", hypervisor.FreeDiskGB)
-		o.Log().Info("--------")
+	switch criteria {
+	case "cpu":
+		sort.Sort(sortedHypervisorsByvCPU(hypervisors))
+	case "memory":
+		sort.Sort(sortedHypervisorsBMemory(hypervisors))
+	default:
+		return hypervisors
 	}
+	return hypervisors
+}
+
+func (o *Openstack) GetHypervisorWithSensitiveCriteria(criteria string) hypervisors.Hypervisor {
+	var h hypervisors.Hypervisor
+	for _, hypervisor := range o.HypervisorScheduler(criteria) {
+		if hypervisor.Status == "enabled" && hypervisor.State == "up" {
+			h = hypervisor
+		}
+		continue
+	}
+	return h
 }
 
 func (o *Openstack) isServerExist(name string) bool {
@@ -403,3 +422,11 @@ func (o *Openstack) IDFromName(hostname string) (string, error) {
 	id, err := servers.IDFromName(o.client, hostname)
 	return id, err
 }
+
+func (c sortedHypervisorsByvCPU) Len() int           { return len(c) }
+func (c sortedHypervisorsByvCPU) Swap(i, j int)      { c[i], c[j] = c[j], c[i] }
+func (c sortedHypervisorsByvCPU) Less(i, j int) bool { return c[i].VCPUsUsed > c[j].VCPUsUsed }
+
+func (c sortedHypervisorsBMemory) Len() int           { return len(c) }
+func (c sortedHypervisorsBMemory) Swap(i, j int)      { c[i], c[j] = c[j], c[i] }
+func (c sortedHypervisorsBMemory) Less(i, j int) bool { return c[i].FreeRamMB > c[j].FreeRamMB }

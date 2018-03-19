@@ -37,3 +37,8 @@ type SimpleResponse struct {
 	Message string `json:"message" xml:"message" form:"message" query:"message"`
 	Error   string `json:"error" xml:"error" form:"error" query:"error"`
 }
+
+type HypervisorName struct {
+	HostID string `json:"hostid" xml:"hostid" form:"hostid" query:"hostid"`
+	Name   string `json:"name" xml:"name" form:"name" query:"name"`
+}

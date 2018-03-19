@@ -103,7 +103,7 @@ func (o *NodeUP) bootstrapHost(s *openstack.Openstack, c *chef.ChefClient, hostn
 		o.Log().Infof("Processing log %s%s.log", o.JenkinsLogURL, hostname)
 	}
 
-	oHost, err := s.CreateSever(hostname, o.OSGroupID, o.DefineNetworks)
+	oHost, err := s.CreateSever(hostname, o.OSGroupID, o.DefineNetworks, o.AvailabilityZone)
 	if err != nil {
 		return false
 	}

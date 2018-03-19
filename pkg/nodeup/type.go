@@ -25,6 +25,7 @@ type NodeUP struct {
 	DefineNetworks    string
 	UsePrivateNetwork bool
 	Gateway           string
+	AvailabilityZone  string
 
 	OSAuthURL       string
 	OSTenantName    string
@@ -35,6 +36,7 @@ type NodeUP struct {
 	OSFlavorName    string
 	OSKeyName       string
 	OSGroupID       string
+	OSProjectID     string
 
 	SSHWaitRetry int
 
