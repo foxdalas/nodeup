@@ -178,17 +178,20 @@ func (o *Openstack) CreateSever(hostname string, group string, networks string, 
 	configDrive := true
 
 	serverCreateOpts := servers.CreateOpts{
-		Name:             hostname,
-		FlavorRef:        flavorID,
-		ImageRef:         imageID,
-		Networks:         s,
-		ConfigDrive:      &configDrive,
-		AvailabilityZone: availabilityZone,
+		Name:        hostname,
+		FlavorRef:   flavorID,
+		ImageRef:    imageID,
+		Networks:    s,
+		ConfigDrive: &configDrive,
 	}
 
 	createOpts := keypairs.CreateOptsExt{
 		CreateOptsBuilder: serverCreateOpts,
 		KeyName:           o.keyName,
+	}
+
+	if len(availabilityZone) > 0 {
+		serverCreateOpts.AvailabilityZone = availabilityZone
 	}
 
 	var server *servers.Server
