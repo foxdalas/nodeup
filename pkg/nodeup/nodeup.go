@@ -99,9 +99,6 @@ func (o *NodeUP) Init() {
 
 func (o *NodeUP) bootstrapHost(s *openstack.Openstack, c *chef.ChefClient, hostname string, wg *sync.WaitGroup) bool {
 	defer wg.Done()
-	if o.JenkinsMode {
-		o.Log().Infof("Processing log %s%s.log", o.JenkinsLogURL, hostname)
-	}
 
 	oHost, err := s.CreateSever(hostname, o.OSGroupID, o.DefineNetworks, o.AvailabilityZone)
 	if err != nil {
@@ -112,6 +109,9 @@ func (o *NodeUP) bootstrapHost(s *openstack.Openstack, c *chef.ChefClient, hostn
 	outFile, err := os.Create(logFile)
 	if err != nil {
 		return false
+	}
+	if o.JenkinsMode {
+		o.Log().Infof("Processing log %s%s.log", o.JenkinsLogURL, hostname)
 	}
 
 	var availableAddresses []string

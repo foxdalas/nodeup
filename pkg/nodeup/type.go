@@ -37,6 +37,7 @@ type NodeUP struct {
 	OSKeyName       string
 	OSGroupID       string
 	OSProjectID     string
+	OSRegionName    string
 
 	SSHWaitRetry int
 
@@ -63,6 +64,11 @@ type NodeUP struct {
 	Daemon bool
 
 	WebSSHUser string
+
+	//Migration
+	Migrate    bool
+	Hosts      string
+	Hypervisor string
 
 	StopCh    chan struct{}
 	WaitGroup sync.WaitGroup

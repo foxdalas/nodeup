@@ -8,14 +8,15 @@ import (
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/hypervisors"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/keypairs"
+	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/migrate"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/networks"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/schedulerhints"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/startstop"
+
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/images"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
 	"github.com/patrickmn/go-cache"
-	"github.com/sirupsen/logrus"
 	"os"
 	"sort"
 	"strings"
@@ -46,12 +47,6 @@ func New(nodeup nodeup.NodeUP, key string, keyName string, flavor string) *Opens
 	o.assertError(err, "Compute")
 
 	return o
-}
-
-func (o *Openstack) assertError(err error, message string) {
-	if err != nil {
-		o.Log().Fatalf(message+": %s", err)
-	}
 }
 
 func (o *Openstack) getFlavorByName() string {
@@ -190,6 +185,7 @@ func (o *Openstack) CreateSever(hostname string, group string, networks string, 
 		KeyName:           o.keyName,
 	}
 
+	// TODO: add auto balancer
 	if len(availabilityZone) > 0 {
 		serverCreateOpts.AvailabilityZone = availabilityZone
 	}
@@ -404,11 +400,6 @@ func (o *Openstack) isServerExist(name string) bool {
 	}
 }
 
-func (o *Openstack) Log() *logrus.Entry {
-	log := o.nodeup.Log().WithField("context", "openstack")
-	return log
-}
-
 func (o *Openstack) DeleteServer(sid string) error {
 	o.Log().Infof("Deleting server with ID %s", sid)
 	result := servers.Delete(o.client, sid)
@@ -474,10 +465,13 @@ func (o *Openstack) IDFromName(hostname string) (string, error) {
 	}
 }
 
-func (c sortedHypervisorsByvCPU) Len() int           { return len(c) }
-func (c sortedHypervisorsByvCPU) Swap(i, j int)      { c[i], c[j] = c[j], c[i] }
-func (c sortedHypervisorsByvCPU) Less(i, j int) bool { return c[i].VCPUsUsed > c[j].VCPUsUsed }
+func (o *Openstack) Migrate(serverID string, hypervisorName string, blockMigration bool, diskOverCommit bool) error {
+	migrationOpts := migrate.LiveMigrateOpts{
+		Host:           &hypervisorName,
+		BlockMigration: &blockMigration,
+		DiskOverCommit: &diskOverCommit,
+	}
 
-func (c sortedHypervisorsBMemory) Len() int           { return len(c) }
-func (c sortedHypervisorsBMemory) Swap(i, j int)      { c[i], c[j] = c[j], c[i] }
-func (c sortedHypervisorsBMemory) Less(i, j int) bool { return c[i].FreeRamMB > c[j].FreeRamMB }
+	err := migrate.LiveMigrate(o.client, serverID, migrationOpts).ExtractErr()
+	return err
+}

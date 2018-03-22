@@ -175,8 +175,3 @@ func (c *ChefClient) isClientExist(clientName string) bool {
 		return true
 	}
 }
-
-func (c *ChefClient) Log() *logrus.Entry {
-	log := c.nodeup.Log().WithField("context", "ssh")
-	return log
-}

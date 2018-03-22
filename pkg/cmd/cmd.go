@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"github.com/foxdalas/nodeup/pkg/chef"
+	"github.com/foxdalas/nodeup/pkg/migrate"
 	"github.com/foxdalas/nodeup/pkg/nodeup"
 	"github.com/foxdalas/nodeup/pkg/openstack"
 	"github.com/foxdalas/nodeup/pkg/rest"
@@ -28,7 +29,14 @@ func Run(version string) {
 
 	if o.Daemon {
 		rest.Init(o)
-	} else {
+	}
+
+	if o.Migrate {
+		m := migrate.New(*o)
+		m.Init()
+	}
+
+	if !o.Daemon && !o.Migrate {
 		o.Init()
 	}
 }
@@ -70,9 +78,11 @@ func createConnect(o *nodeup.NodeUP) {
 	var err error
 
 	o.Openstack = openstack.New(o, o.OSPublicKey, o.OSKeyName, o.OSFlavorName)
-	o.Chef, err = chef.NewChefClient(o, o.ChefClientName, o.ChefKeyPem, o.ChefServerUrl)
-	if err != nil {
-		o.Log().Fatal(err)
+	if !o.Migrate {
+		o.Chef, err = chef.NewChefClient(o, o.ChefClientName, o.ChefKeyPem, o.ChefServerUrl)
+		if err != nil {
+			o.Log().Fatal(err)
+		}
 	}
 }
 
@@ -114,92 +124,104 @@ func params(o *nodeup.NodeUP) error {
 	flag.StringVar(&o.DeleteNodes, "deleteNodes", "", "Delete mode. Please use -deleteNodes node_name1, node_name2")
 	flag.BoolVar(&o.Daemon, "daemon", false, "Use HTTP daemon")
 
+	flag.BoolVar(&o.Migrate, "migrate", false, "Migrate mode")
+	flag.StringVar(&o.Hosts, "hosts", "", "Hosts for migrate")
+	flag.StringVar(&o.Hypervisor, "hypervisor", "", "Migrate to hypervisor")
+
 	flag.Parse()
 
 	o.Gateway = os.Getenv("GATEWAY")
 
-	if o.ChefValidationPath == "" && len(os.Getenv("CHEF_VALIDATION_PEM")) == 0 {
-		return errors.New("Please provide -chefValidationPath or environment variable CHEF_VALIDATION_PEM")
-	} else {
-		if len(os.Getenv("CHEF_VALIDATION_PEM")) > 0 {
-			o.ChefValidationPem = []byte(os.Getenv("CHEF_VALIDATION_PEM"))
+	if !o.Migrate {
+		if o.ChefValidationPath == "" && len(os.Getenv("CHEF_VALIDATION_PEM")) == 0 {
+			return errors.New("Please provide -chefValidationPath or environment variable CHEF_VALIDATION_PEM")
 		} else {
-			o.ChefValidationPem, err = ioutil.ReadFile(o.ChefValidationPath)
-			if err != nil {
-				o.Log().Errorf("Chef validation read error: %s", err)
+			if len(os.Getenv("CHEF_VALIDATION_PEM")) > 0 {
+				o.ChefValidationPem = []byte(os.Getenv("CHEF_VALIDATION_PEM"))
+			} else {
+				o.ChefValidationPem, err = ioutil.ReadFile(o.ChefValidationPath)
+				if err != nil {
+					o.Log().Errorf("Chef validation read error: %s", err)
+				}
 			}
 		}
-	}
-
-	if o.ChefKeyPath == "" && len(os.Getenv("CHEF_KEY_PEM")) == 0 {
-		return errors.New("Please provide -chefKeyPath or environment variable CHEF_KEY_PEM")
-	} else {
-		if len(os.Getenv("CHEF_KEY_PEM")) > 0 {
-			o.ChefKeyPem = []byte(os.Getenv("CHEF_KEY_PEM"))
+		if o.ChefKeyPath == "" && len(os.Getenv("CHEF_KEY_PEM")) == 0 {
+			return errors.New("Please provide -chefKeyPath or environment variable CHEF_KEY_PEM")
 		} else {
-			o.ChefKeyPem, err = ioutil.ReadFile(o.ChefKeyPath)
-			if err != nil {
-				o.Log().Errorf("Chef key read error: %s", err)
+			if len(os.Getenv("CHEF_KEY_PEM")) > 0 {
+				o.ChefKeyPem = []byte(os.Getenv("CHEF_KEY_PEM"))
+			} else {
+				o.ChefKeyPem, err = ioutil.ReadFile(o.ChefKeyPath)
+				if err != nil {
+					o.Log().Errorf("Chef key read error: %s", err)
+				}
 			}
 		}
-	}
-
-	if o.ChefServerUrl == "" && len(os.Getenv("CHEF_SERVER_URL")) == 0 {
-		return errors.New("Please provide -chefServerUrl or environment variable CHEF_SERVER_URL")
-	} else {
-		if len(os.Getenv("CHEF_SERVER_URL")) > 0 {
-			o.ChefServerUrl = os.Getenv("CHEF_SERVER_URL")
-		}
-	}
-
-	if o.ChefClientName == "" && len(os.Getenv("CHEF_CLIENT_NAME")) == 0 {
-		return errors.New("Please provide -chefClientName or environment variable CHEF_CLIENT_NAME")
-	} else {
-		if len(os.Getenv("CHEF_CLIENT_NAME")) > 0 {
-			o.ChefClientName = os.Getenv("CHEF_CLIENT_NAME")
-		}
-	}
-
-	if (o.ChefRole == "" && o.DeleteNodes == "") && !o.Daemon {
-		return errors.New("Please provide -chefRole string")
-	}
-
-	if (o.ChefEnvironment == "" && o.DeleteNodes == "") && !o.Daemon {
-		return errors.New("Please provide -chefEnvironment string")
-	}
-
-	if (o.Name == "" && o.DeleteNodes == "") && !o.Daemon {
-		return errors.New("Please provide -name string")
-	}
-
-	if (o.Domain == "" && o.DeleteNodes == "") && !o.Daemon {
-		return errors.New("Please provide -domain string")
-	}
-
-	if (o.Count == 0 && o.DeleteNodes == "") && !o.Daemon {
-		return errors.New("Please provide -count int")
-	}
-
-	if o.OSPublicKeyPath == "" && len(os.Getenv("OS_PUBLIC_KEY")) == 0 {
-		return errors.New("Please provide -publicKeyPath or environment variable OS_PUBLIC_KEY")
-	} else {
-		if o.OSPublicKeyPath != "" {
-			dat, err := ioutil.ReadFile(o.OSPublicKeyPath)
-			if err != nil {
-				log.Fatal(err)
-			}
-			o.OSPublicKey = string(dat)
+		if o.ChefServerUrl == "" && len(os.Getenv("CHEF_SERVER_URL")) == 0 {
+			return errors.New("Please provide -chefServerUrl or environment variable CHEF_SERVER_URL")
 		} else {
-			o.OSPublicKey = os.Getenv("OS_PUBLIC_KEY")
+			if len(os.Getenv("CHEF_SERVER_URL")) > 0 {
+				o.ChefServerUrl = os.Getenv("CHEF_SERVER_URL")
+			}
 		}
-	}
 
-	if (o.OSFlavorName == "" && o.DeleteNodes == "") && !o.Daemon {
-		return errors.New("Please provide -flavor string")
-	}
+		if o.ChefClientName == "" && len(os.Getenv("CHEF_CLIENT_NAME")) == 0 {
+			return errors.New("Please provide -chefClientName or environment variable CHEF_CLIENT_NAME")
+		} else {
+			if len(os.Getenv("CHEF_CLIENT_NAME")) > 0 {
+				o.ChefClientName = os.Getenv("CHEF_CLIENT_NAME")
+			}
+		}
 
-	if (o.OSKeyName == "" && o.DeleteNodes == "") && !o.Daemon {
-		return errors.New("Please provide -keyname string")
+		if (o.ChefRole == "" && o.DeleteNodes == "") && !o.Daemon {
+			return errors.New("Please provide -chefRole string")
+		}
+
+		if (o.ChefEnvironment == "" && o.DeleteNodes == "") && !o.Daemon {
+			return errors.New("Please provide -chefEnvironment string")
+		}
+		if (o.Name == "" && o.DeleteNodes == "") && !o.Daemon {
+			return errors.New("Please provide -name string")
+		}
+
+		if (o.Domain == "" && o.DeleteNodes == "") && !o.Daemon {
+			return errors.New("Please provide -domain string")
+		}
+
+		if (o.Count == 0 && o.DeleteNodes == "") && !o.Daemon {
+			return errors.New("Please provide -count int")
+		}
+
+		if o.OSPublicKeyPath == "" && len(os.Getenv("OS_PUBLIC_KEY")) == 0 {
+			return errors.New("Please provide -publicKeyPath or environment variable OS_PUBLIC_KEY")
+		} else {
+			if o.OSPublicKeyPath != "" {
+				dat, err := ioutil.ReadFile(o.OSPublicKeyPath)
+				if err != nil {
+					log.Fatal(err)
+				}
+				o.OSPublicKey = string(dat)
+			} else {
+				o.OSPublicKey = os.Getenv("OS_PUBLIC_KEY")
+			}
+		}
+
+		if (o.OSFlavorName == "" && o.DeleteNodes == "") && !o.Daemon {
+			return errors.New("Please provide -flavor string")
+		}
+
+		if (o.OSKeyName == "" && o.DeleteNodes == "") && !o.Daemon {
+			return errors.New("Please provide -keyname string")
+		}
+	} else {
+		if o.Hosts == "" {
+			return errors.New("Please provide -hosts string")
+		}
+
+		if o.Hypervisor == "" {
+			return errors.New("Please provide -hypervisor string")
+		}
+
 	}
 
 	o.OSAuthURL = os.Getenv("OS_AUTH_URL")
@@ -230,6 +252,11 @@ func params(o *nodeup.NodeUP) error {
 	o.OSProjectID = os.Getenv("OS_PROJECT_ID")
 	if len(o.OSProjectID) == 0 && o.Daemon {
 		return errors.New("Please provide OS_PROJECT_ID")
+	}
+
+	o.OSRegionName = os.Getenv("OS_REGION_NAME")
+	if len(o.OSRegionName) == 0 {
+		return errors.New("Please provide OS_REGION_NAME")
 	}
 
 	if o.JenkinsMode {

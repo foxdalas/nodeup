@@ -137,9 +137,3 @@ func (s *Ssh) TransferFile(data []byte, name string, path string) error {
 
 	return err
 }
-
-func (s *Ssh) assertError(err error) {
-	if err != nil {
-		s.Log().Error(err)
-	}
-}
