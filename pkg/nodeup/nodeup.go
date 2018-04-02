@@ -453,3 +453,7 @@ source /etc/network/interfaces.d/*`)
 	}
 	return buf.Bytes()
 }
+
+func (o *NodeUP) DeleteWhitespaces(string string) string {
+	return strings.Replace(string, " ", "", -1)
+}

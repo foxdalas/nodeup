@@ -37,7 +37,7 @@ func (m *Migrate) Init() {
 
 	var wg sync.WaitGroup
 
-	for _, host := range strings.Split(m.nodeup.Hosts, ",") {
+	for _, host := range strings.Split(m.nodeup.DeleteWhitespaces(m.nodeup.Hosts), ",") {
 		m.Log().Infof("Searching ID for host %s", host)
 		hostID, err := m.nodeup.Openstack.IDFromName(host)
 		if err != nil {
