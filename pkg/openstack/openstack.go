@@ -180,14 +180,15 @@ func (o *Openstack) CreateSever(hostname string, group string, networks string, 
 		ConfigDrive: &configDrive,
 	}
 
+	// TODO: add auto balancer
+	if len(availabilityZone) > 0 {
+		o.Log().Info("Launching server in availability zone %s", availabilityZone)
+		serverCreateOpts.AvailabilityZone = availabilityZone
+	}
+
 	createOpts := keypairs.CreateOptsExt{
 		CreateOptsBuilder: serverCreateOpts,
 		KeyName:           o.keyName,
-	}
-
-	// TODO: add auto balancer
-	if len(availabilityZone) > 0 {
-		serverCreateOpts.AvailabilityZone = availabilityZone
 	}
 
 	var server *servers.Server
