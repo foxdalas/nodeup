@@ -20,6 +20,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -267,7 +268,6 @@ func (o *Openstack) GetServer(sid string) (*servers.Server, error) {
 func (o *Openstack) GetServerDetail(sid string) (Server, error) {
 	var server Server
 	err := servers.Get(o.client, sid).ExtractInto(&server)
-	o.Log().Info(servers.Get(o.client, sid).PrettyPrintJSON())
 	if err != nil {
 		o.Log().Error(err)
 		return server, err
@@ -475,4 +475,65 @@ func (o *Openstack) Migrate(serverID string, hypervisorName string, blockMigrati
 
 	err := migrate.LiveMigrate(o.client, serverID, migrationOpts).ExtractErr()
 	return err
+}
+
+func (o *Openstack) MigrateHost(id string, hypervisor string, wg *sync.WaitGroup) bool {
+	defer wg.Done()
+
+	serverInfo, err := o.GetServer(id)
+	if err != nil {
+		o.Log().Error(err)
+	}
+	if serverInfo.Status == "MIGRATING" {
+		o.Log().Errorf("Server %s already in migration state", id)
+		return false
+	}
+
+	o.Log().Infof("Migration process to hypervisor %s started for hostID %s", hypervisor, id)
+
+	err = o.Migrate(id, hypervisor, true, false)
+	if err != nil {
+		o.Log().Error(err)
+		return false
+	}
+
+	doneCh := make(chan bool, 1)
+	resChan := make(chan bool)
+	go func(doneCh, resCh chan bool) {
+		ticker := time.NewTicker(10 * time.Second)
+
+		for {
+			select {
+			case <-ticker.C:
+				serverInfo, err := o.GetServer(id)
+				if err != nil {
+					o.Log().Error(err)
+				}
+
+				if serverInfo.Status == "MIGRATING" {
+					o.Log().Infof("Server %s is still migrating", serverInfo.Name)
+					continue
+				}
+				if serverInfo.Status == "ACTIVE" {
+					o.Log().Infof("Server %s migration process is done", serverInfo.Name)
+					resCh <- true
+					return
+				}
+			case <-doneCh:
+				return
+			}
+		}
+	}(doneCh, resChan)
+
+	timer := time.NewTimer(time.Hour)
+
+	select {
+	case <-timer.C:
+		doneCh <- true
+		return false
+	case res := <-resChan:
+		return res
+
+	}
+	return false
 }
