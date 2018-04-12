@@ -183,7 +183,7 @@ func (o *Openstack) CreateSever(hostname string, group string, networks string, 
 
 	// TODO: add auto balancer
 	if len(availabilityZone) > 0 {
-		o.Log().Info("Launching server in availability zone %s", availabilityZone)
+		o.Log().Infof("Launching server in availability zone %s", availabilityZone)
 		serverCreateOpts.AvailabilityZone = availabilityZone
 	}
 
