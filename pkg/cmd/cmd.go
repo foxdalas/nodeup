@@ -131,7 +131,7 @@ func params(o *nodeup.NodeUP) error {
 	flag.StringVar(&o.SSHUser, "sshUser", "cloud-user", "SSH Username")
 	flag.StringVar(&o.SSHUploadDir, "sshUploadDir", "/home/"+o.SSHUser, "SSH Upload directory")
 	flag.StringVar(&o.DefineNetworks, "networks", "", "Define networks like internet_XX.XX.XX.XX/XX,local_private,global_private")
-	flag.StringVar(&o.WebSSHUser, "web.sshUser", "cloud-user", "SSH User for Web Managment")
+	flag.StringVar(&o.WebSSHUser, "web.sshUser", "cloud-user", "SSH User for Web Management")
 
 	flag.BoolVar(&o.JenkinsMode, "jenkinsMode", false, "Jenkins capability mode")
 

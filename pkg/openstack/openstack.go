@@ -535,5 +535,4 @@ func (o *Openstack) MigrateHost(id string, hypervisor string, wg *sync.WaitGroup
 		return res
 
 	}
-	return false
 }
